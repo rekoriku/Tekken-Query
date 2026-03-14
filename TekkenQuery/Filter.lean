@@ -73,12 +73,14 @@ inductive Filter where
   | negative                            -- block frame -1 to -9 (negative but not punishable)
   | punishable                          -- block frame ≤ -10
   | blockFrameBetween (lo hi : Int)     -- lo ≤ block frame ≤ hi
+  | guardable                           -- block frame has 'g' suffix (opponent can still guard)
   -- Startup frame filters
   | startupEq (frames : Nat)            -- startup == N
   | startupLt (frames : Nat)            -- startup < N (faster than)
   | startupGt (frames : Nat)            -- startup > N (slower than)
   | startupLe (frames : Nat)            -- startup ≤ N
   | startupGe (frames : Nat)            -- startup ≥ N
+  | activeFramesGe (n : Nat)            -- at least n active frames
   -- Stance filters
   | stance (name : String)              -- moves from a specific stance
   | hasStance                           -- any stance move
@@ -117,39 +119,50 @@ def Filter.eval (f : Filter) (m : TekkenMove) : Bool :=
     | none => false
   | .plusOnBlock =>
     match m.blockFrameValue with
-    | some v => v > 0
+    | some d => d.value > 0
     | none => false
   | .negative =>
     match m.blockFrameValue with
-    | some v => v < 0 && v > -10
+    | some d => d.value < 0 && d.value > -10
     | none => false
   | .punishable =>
     match m.blockFrameValue with
-    | some v => v ≤ -10
+    | some d => d.value ≤ -10
     | none => false
   | .blockFrameBetween lo hi =>
     match m.blockFrameValue with
-    | some v => v ≥ lo && v ≤ hi
+    | some d => d.value ≥ lo && d.value ≤ hi
+    | none => false
+  | .guardable =>
+    match m.blockFrameValue with
+    | some d => d.guardable
     | none => false
   | .startupEq n =>
     match m.startupFrameValue with
-    | some v => v == n
+    | some d => d.startup == n
     | none => false
   | .startupLt n =>
     match m.startupFrameValue with
-    | some v => v < n
+    | some d => d.startup < n
     | none => false
   | .startupGt n =>
     match m.startupFrameValue with
-    | some v => v > n
+    | some d => d.startup > n
     | none => false
   | .startupLe n =>
     match m.startupFrameValue with
-    | some v => v ≤ n
+    | some d => d.startup ≤ n
     | none => false
   | .startupGe n =>
     match m.startupFrameValue with
-    | some v => v ≥ n
+    | some d => d.startup ≥ n
+    | none => false
+  | .activeFramesGe n =>
+    match m.startupFrameValue with
+    | some d =>
+      match d.activeFrames with
+      | some af => af ≥ n
+      | none => false
     | none => false
   | .stance name =>
     match m.stance with

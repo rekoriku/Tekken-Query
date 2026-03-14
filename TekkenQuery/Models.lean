@@ -107,17 +107,17 @@ structure TekkenMove where
   deriving Repr, BEq, Inhabited
 
 /--
-  Get the parsed startup frame value as a Nat.
+  Get the parsed startup frame data (preserves active frame range).
 -/
-def TekkenMove.startupFrameValue (m : TekkenMove) : Option Nat :=
+def TekkenMove.startupFrameValue (m : TekkenMove) : Option Frame.StartupData :=
   match m.startupFrame with
   | none => none
   | some s => Frame.parseStartupFrame s
 
 /--
-  Get the parsed block frame value as an Int.
+  Get the parsed block frame data (preserves guard suffix and range).
 -/
-def TekkenMove.blockFrameValue (m : TekkenMove) : Option Int :=
+def TekkenMove.blockFrameValue (m : TekkenMove) : Option Frame.BlockFrameData :=
   match m.blockFrame with
   | none => none
   | some s => Frame.parseBlockFrame s
@@ -280,6 +280,47 @@ def TekkenMove.fromRecord (rec : List (String × Option String)) : TekkenMove :=
     transitions       := lookupField rec "Transitions"
     image             := lookupField rec "Image"
     video             := lookupField rec "Video"
+    stance            := stance
+    commandWithoutStance := some cmdWithoutStance
+    properties        := parseProperties tags notes
+  }
+
+/--
+  Build a TekkenMove from a clean (exported) CSV record.
+  Clean CSVs use snake_case headers and pre-parsed frame values.
+  Reconstructs the raw frame strings so startupFrameValue/blockFrameValue work.
+-/
+def TekkenMove.fromCleanRecord (rec : List (String × Option String)) : TekkenMove :=
+  let command := (lookupField rec "command").getD ""
+  let (stance, cmdWithoutStance) := parseStance command
+  let tags := lookupField rec "tags"
+  let notes := lookupField rec "notes"
+  -- Reconstruct startup frame string: "i13" or "i12~13"
+  let startupFrame := match lookupField rec "startup" with
+    | some s =>
+      match lookupField rec "startup_end" with
+      | some e => some s!"i{s}~{e}"
+      | none => some s!"i{s}"
+    | none => none
+  -- Reconstruct block frame string: "-10" or "+5g"
+  let blockFrame := match lookupField rec "block_frame" with
+    | some bf =>
+      let guard := match lookupField rec "block_guardable" with
+        | some "true" => "g"
+        | _ => ""
+      some (bf ++ guard)
+    | none => none
+  {
+    command           := command
+    name              := lookupField rec "name"
+    hitLevel          := lookupField rec "hit_level"
+    damage            := lookupField rec "damage"
+    startupFrame      := startupFrame
+    blockFrame        := blockFrame
+    hitFrame          := lookupField rec "hit_frame"
+    counterHitFrame   := lookupField rec "counter_hit_frame"
+    notes             := notes
+    tags              := tags
     stance            := stance
     commandWithoutStance := some cmdWithoutStance
     properties        := parseProperties tags notes
