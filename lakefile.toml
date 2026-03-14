@@ -1,0 +1,10 @@
+name = "tekken_query"
+version = "0.1.0"
+defaultTargets = ["tekken_query"]
+
+[[lean_lib]]
+name = "TekkenQuery"
+
+[[lean_exe]]
+name = "tekken_query"
+root = "Main"
