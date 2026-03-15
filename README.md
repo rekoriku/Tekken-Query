@@ -66,20 +66,35 @@ zips with headers, and cleans all values in one pipeline.
 - `buildRecords_field_count` — every record has exactly `headers.length` fields
 
 ### `TekkenQuery.Frame`
-Verified frame data parsers. Converts messy frame strings into clean numeric values.
+Verified frame data parsers. Converts messy frame strings into structured data.
+No data loss — ranges, active frames, and guard suffixes are all preserved.
+
+#### `StartupData` — startup frame with active frame range
 
 | Input | Output | Notes |
 |-------|--------|-------|
-| `"i13"` | `some 13` | Startup frame |
-| `"i12~13"` | `some 12` | Range — takes first value |
-| `"+5"` | `some 5` | Positive block frame |
-| `"-10"` | `some (-10)` | Negative block frame |
-| `"-9g"` | `some (-9)` | Strips trailing letters |
-| `"+4~+5"` | `some 4` | Range — takes first value |
+| `"i13"` | `{ startup := 13 }` | Single startup frame |
+| `"i12~13"` | `{ startup := 12, activeEnd := some 13 }` | 2 active frames (12 and 13) |
+| `"i19~34"` | `{ startup := 19, activeEnd := some 34 }` | 16 active frames |
+
+`StartupData.activeFrames` computes the count: `i12~13` → `some 2`.
+
+#### `BlockFrameData` — block advantage with guard suffix
+
+| Input | Output | Notes |
+|-------|--------|-------|
+| `"+5"` | `{ value := 5, guardable := false }` | +5 and opponent CANNOT block — free launch |
+| `"+15g"` | `{ value := 15, guardable := true }` | +15 but opponent CAN still block |
+| `"-10"` | `{ value := -10, guardable := false }` | Punishable |
+| `"-9g"` | `{ value := -9, guardable := true }` | Negative but guardable |
+| `"+4~+5"` | `{ value := 4, rangeEnd := some 5 }` | Range preserved |
+
+The `g` suffix is critical: `+15` (no g) means free launch, `+15g` means opponent can still guard.
 
 **Proofs:**
 - `negSucc_neg` — negative representation is always < 0
 - `negSucc_eq_neg` — `Int.negSucc (n-1) = -n` for positive n
+- `activeFrames_ge_one` — computed active frames are always ≥ 1
 
 ### `TekkenQuery.Models`
 Pure data models. No IO, no side effects, all fields immutable.
@@ -155,11 +170,13 @@ Composable filter DSL. One `Filter` type, one `eval` function, infinite combinat
 | `.negative` | Block frame -1 to -9 |
 | `.punishable` | Block frame ≤ -10 |
 | `.blockFrameBetween lo hi` | lo ≤ block frame ≤ hi |
+| `.guardable` | Block frame has `g` suffix (opponent can still guard) |
 | `.startupEq n` | Startup == n frames |
 | `.startupLt n` | Startup < n (faster than) |
 | `.startupGt n` | Startup > n (slower than) |
 | `.startupLe n` | Startup ≤ n |
 | `.startupGe n` | Startup ≥ n |
+| `.activeFramesGe n` | At least n active frames |
 | `.stance "ZEN"` | From specific stance |
 | `.hasStance` | Any stance move |
 | `.property .powerCrush` | Has power crush property |
@@ -190,6 +207,12 @@ query char (.anyProperty [.elbow, .knee, .headbutt, .weapon])
 -- Moves faster than i15 that are plus on block
 query char (.and (.startupLt 15) .plusOnBlock)
 
+-- Free launch moves: plus on block AND not guardable
+query char (.and .plusOnBlock (.not .guardable))
+
+-- Moves with 3+ active frames
+query char (.activeFramesGe 3)
+
 -- Chain multiple filters
 queryAll char [.hitLevel "m", .plusOnBlock, .property .homing]
 
@@ -214,8 +237,8 @@ Raw CSV ("hb pc7~16")
   → TekkenMove.fromRecord (build typed move)
     → parseStance ("ZEN.1+2" → stance="ZEN", cmd="1+2")
     → parseTags ("hb pc7~16" → [.heatBurst, .powerCrush ⟨7, some 16⟩])
-    → startupFrameValue ("i13" → some 13)
-    → blockFrameValue ("-10" → some (-10))
+    → startupFrameValue ("i12~13" → { startup := 12, activeEnd := some 13 })
+    → blockFrameValue ("+15g" → { value := 15, guardable := true })
   → query/queryAll/compare (composable filters)
 ```
 
