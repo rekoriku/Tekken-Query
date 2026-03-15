@@ -436,25 +436,50 @@ fn parse_moves_array(moves_val: Option<&Value>) -> Result<Vec<Move>, CliError> {
 
 // ── Binary location ─────────────────────────────────────────────────
 
-/// Find the Lean binary path. Checks relative to data dir and CWD.
-fn find_lean_binary(data_dir: &Path) -> Option<PathBuf> {
-    // Check relative to data dir parent (project root)
-    if let Some(project_root) = data_dir.parent() {
-        let candidate = project_root.join(".lake/build/bin/tekken_query");
+/// Name of the Lean binary (platform-dependent).
+fn lean_binary_name() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "tekken_query.exe"
+    } else {
+        "tekken_query"
+    }
+}
+
+/// Find the Lean binary path.
+///
+/// Search order:
+/// 1. Same directory as the running `tekken-cli` executable (release layout)
+/// 2. Relative to the data directory's parent (dev layout)
+/// 3. Relative to CWD (dev layout fallback)
+pub(crate) fn find_lean_binary(data_dir: &Path) -> Option<PathBuf> {
+    let name = lean_binary_name();
+
+    // 1. Same directory as the running executable (release distribution)
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+    {
+        let candidate = exe_dir.join(name);
         if candidate.exists() {
             return Some(candidate);
         }
     }
-    // Check relative to CWD
-    for path in &[
-        ".lake/build/bin/tekken_query",
-        "../.lake/build/bin/tekken_query",
-    ] {
-        let p = PathBuf::from(path);
+
+    // 2. Relative to data dir parent (project root)
+    if let Some(project_root) = data_dir.parent() {
+        let candidate = project_root.join(".lake/build/bin").join(name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // 3. Relative to CWD
+    for base in &[".lake/build/bin", "../.lake/build/bin"] {
+        let p = PathBuf::from(base).join(name);
         if p.exists() {
             return Some(p);
         }
     }
+
     None
 }
 

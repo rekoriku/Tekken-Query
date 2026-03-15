@@ -99,27 +99,13 @@ fn fetch_latest_sha() -> Result<String, CliError> {
 
 // ── Lean binary integration ─────────────────────────────────────────
 
-/// Find the Lean binary path. Checks standard locations.
-fn find_lean_binary() -> Option<String> {
-    let candidates = [
-        ".lake/build/bin/tekken_query",
-        "../.lake/build/bin/tekken_query",
-    ];
-    for path in &candidates {
-        if std::path::Path::new(path).exists() {
-            return Some((*path).to_string());
-        }
-    }
-    None
-}
-
-/// Convert a raw CSV to clean CSV using the Lean binary.
+/// Convert a raw CSV to clean CSV using the Lean binary directly.
 ///
 /// The Lean pipeline is formally verified — this ensures the
 /// clean CSV output is provably correct.
 fn convert_with_lean(lean_binary: &str, raw_path: &Path) -> Result<String, CliError> {
-    let output = std::process::Command::new("lake")
-        .args(["env", lean_binary, "--export"])
+    let output = std::process::Command::new(lean_binary)
+        .arg("--export")
         .arg(raw_path)
         .output()
         .map_err(|e| CliError::IoError(format!("lean binary: {e}")))?;
@@ -185,11 +171,16 @@ pub fn fetch_all(
 ) -> Result<Manifest, CliError> {
     // Lean binary is only needed when no server is provided
     let lean_binary = if server.is_none() {
-        Some(find_lean_binary().ok_or_else(|| {
+        let path = crate::lean_server::find_lean_binary(data_dir).ok_or_else(|| {
             CliError::DataNotFound(
                 "Lean binary not found. Run 'lake build' in the project root first.".into(),
             )
-        })?)
+        })?;
+        Some(
+            path.to_str()
+                .ok_or_else(|| CliError::IoError("non-UTF-8 lean binary path".into()))?
+                .to_string(),
+        )
     } else {
         None
     };

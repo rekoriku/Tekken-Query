@@ -1,8 +1,38 @@
-# tekken_query
+<p align="center">
+  <img src="assets/icon.svg" width="96" alt="Tekken Query">
+</p>
 
-Formally verified Tekken 8 frame data query tool.
+<h1 align="center">Tekken Query</h1>
 
-All data logic — CSV parsing, frame data parsing, filtering, comparisons — is implemented in [Lean 4](https://lean-lang.org/) with mathematical proofs checked by the Lean kernel. The interactive CLI is written in Rust. No `sorry`, no `unsafe`, no shortcuts.
+<p align="center">
+  Formally verified Tekken 8 frame data query tool.
+</p>
+
+<p align="center">
+  All data logic — CSV parsing, frame data parsing, filtering, comparisons — is implemented in <a href="https://lean-lang.org/">Lean 4</a> with mathematical proofs checked by the Lean kernel. The interactive CLI is written in Rust. No <code>sorry</code>, no <code>unsafe</code>, no shortcuts.
+</p>
+
+## Screenshots
+
+<p align="center">
+  <img src="assets/not_selected_move.png" width="520" alt="Global move lookup — df1 across all characters">
+  <br><em>Global move lookup — compare df+1 across all 40 characters</em>
+</p>
+
+<p align="center">
+  <img src="assets/selected_char.png" width="520" alt="Character queries — move lookup, filters, heat search">
+  <br><em>Move lookup, notation shortcuts, filter queries, heat search</em>
+</p>
+
+<p align="center">
+  <img src="assets/list.png" width="520" alt="Full move list with color-coded frame data">
+  <br><em>Color-coded frame data — green (plus), yellow (safe), red (punishable)</em>
+</p>
+
+<p align="center">
+  <img src="assets/chars.png" width="520" alt="Character list with move counts">
+  <br><em>Full roster with move counts</em>
+</p>
 
 ## Quick Start
 
@@ -17,16 +47,23 @@ tekken-query-macos-x86_64.tar.gz
 tekken-query-windows-x86_64.zip
 ```
 
-Each archive contains two binaries:
+Each archive contains:
 - `tekken-cli` — the interactive CLI
 - `tekken_query` — the verified Lean core
+- `tekken-query.sh` / `tekken-query.bat` — double-click launcher
 
-Place both in the same directory (or anywhere on your `PATH`).
+Place all files in the same directory.
+
+> **macOS note:** If Gatekeeper blocks the binaries, run:
+> `xattr -d com.apple.quarantine tekken-cli tekken_query`
 
 ### Run
 
 ```bash
-# Interactive mode (recommended) — auto-fetches data on first run
+# Double-click the launcher, or from a terminal:
+./tekken-query.sh
+
+# Or run directly:
 tekken-cli interactive
 
 # One-shot query
@@ -297,4 +334,4 @@ The filter system includes 14+ mathematical proofs:
 
 ## License
 
-TODO
+[MIT](LICENSE)

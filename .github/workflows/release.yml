@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            archive: tar.gz
+          - os: macos-latest
+            target: macos-arm64
+            archive: tar.gz
+          - os: macos-13
+            target: macos-x86_64
+            archive: tar.gz
+          - os: windows-latest
+            target: windows-x86_64
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Build Lean ──────────────────────────────────────────────
+      - uses: leanprover/lean-action@v1
+
+      # ── Build Rust ─────────────────────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Rust CLI
+        run: cargo build --release --manifest-path cli/Cargo.toml
+
+      # ── Package (Linux / macOS) ────────────────────────────────
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          mkdir -p staging
+          cp .lake/build/bin/tekken_query staging/
+          cp cli/target/release/tekken-cli staging/
+          cp launchers/tekken-query.sh staging/
+          chmod +x staging/tekken-query.sh staging/tekken-cli staging/tekken_query
+          tar czf tekken-query-${{ matrix.target }}.tar.gz -C staging .
+
+      # ── Package (Windows) ──────────────────────────────────────
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force staging
+          Copy-Item .lake/build/bin/tekken_query.exe staging/
+          Copy-Item cli/target/release/tekken-cli.exe staging/
+          Copy-Item launchers/tekken-query.bat staging/
+          Compress-Archive -Path staging/* -DestinationPath tekken-query-${{ matrix.target }}.zip
+
+      # ── Upload ─────────────────────────────────────────────────
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tekken-query-${{ matrix.target }}
+          path: tekken-query-${{ matrix.target }}.${{ matrix.archive }}
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: artifacts/**/*

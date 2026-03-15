@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- Terminal window -->
+  <rect x="8" y="16" width="112" height="96" rx="8" stroke="#e0e0e0" stroke-width="4" fill="#1a1a2e"/>
+  <!-- Title bar -->
+  <rect x="8" y="16" width="112" height="20" rx="8" fill="#2d2d44"/>
+  <rect x="8" y="28" width="112" height="8" fill="#2d2d44"/>
+  <!-- Window buttons -->
+  <circle cx="24" cy="26" r="4" fill="#ff5f56"/>
+  <circle cx="38" cy="26" r="4" fill="#ffbd2e"/>
+  <circle cx="52" cy="26" r="4" fill="#27c93f"/>
+  <!-- Prompt line 1: > T8 -->
+  <text x="20" y="60" font-family="monospace" font-size="16" font-weight="bold" fill="#27c93f">&#x276f;</text>
+  <text x="36" y="60" font-family="monospace" font-size="16" font-weight="bold" fill="#e0e0e0">T8</text>
+  <!-- Prompt line 2: frame data -->
+  <text x="20" y="80" font-family="monospace" font-size="11" fill="#888">df+1</text>
+  <text x="56" y="80" font-family="monospace" font-size="11" fill="#ffbd2e">m</text>
+  <text x="68" y="80" font-family="monospace" font-size="11" fill="#27c93f">i13</text>
+  <text x="92" y="80" font-family="monospace" font-size="11" fill="#27c93f">-3</text>
+  <!-- Cursor -->
+  <rect x="20" y="90" width="8" height="14" fill="#27c93f" opacity="0.8"/>
+</svg>
