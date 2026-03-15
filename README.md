@@ -39,9 +39,9 @@ tekken-query-windows-x86_64.zip
 ```
 
 Each archive contains:
-- `tekken-cli` — the interactive CLI
+- `tekken-query` — **double-click this to launch** (launcher with icon)
+- `tekken-cli` — the full CLI with all commands
 - `tekken_query` — the verified Lean core
-- `tekken-query.sh` / `tekken-query.bat` — double-click launcher
 
 Place all files in the same directory.
 
@@ -51,10 +51,10 @@ Place all files in the same directory.
 ### Run
 
 ```bash
-# Double-click the launcher, or from a terminal:
-./tekken-query.sh
+# Double-click tekken-query, or from a terminal:
+./tekken-query
 
-# Or run directly:
+# Or use the full CLI directly:
 tekken-cli interactive
 
 # One-shot query

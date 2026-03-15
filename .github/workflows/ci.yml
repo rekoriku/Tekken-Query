@@ -44,11 +44,16 @@ jobs:
         with:
           components: clippy
 
-      - name: Clippy
+      - name: Clippy (CLI)
         run: cargo clippy --manifest-path cli/Cargo.toml -- -D warnings
+
+      - name: Clippy (launcher)
+        run: cargo clippy --manifest-path launcher/Cargo.toml -- -D warnings
 
       - name: Test
         run: cargo test --manifest-path cli/Cargo.toml
 
       - name: Build
-        run: cargo build --release --manifest-path cli/Cargo.toml
+        run: |
+          cargo build --release --manifest-path cli/Cargo.toml
+          cargo build --release --manifest-path launcher/Cargo.toml
