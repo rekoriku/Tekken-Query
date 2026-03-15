@@ -1,3 +1,4 @@
+mod aliases;
 mod completion;
 mod data;
 mod display;
@@ -314,7 +315,12 @@ fn cmd_compare(
 }
 
 fn cmd_fetch(data_dir: &Path) -> Result<(), CliError> {
-    fetch::fetch_all(data_dir)?;
+    // Try to start Lean server for faster conversion, fall back to subprocess
+    let mut server = LeanServer::start(data_dir).ok();
+    fetch::fetch_all(data_dir, server.as_mut())?;
+    if let Some(srv) = server {
+        srv.quit();
+    }
     Ok(())
 }
 

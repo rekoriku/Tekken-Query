@@ -112,8 +112,9 @@ def parseStartupFrame (s : String) : Option StartupData :=
   let chars := match chars with
     | c :: rest => if c == 'i' || c == 'I' then rest else c :: rest
     | [] => []
-  -- Take characters up to comma (multi-hit separator)
-  let chars := chars.takeWhile (fun c => c != ',')
+  -- Take characters up to comma or space (multi-hit separators)
+  -- Raw data uses spaces between per-hit startups: "i13 i32~75"
+  let chars := chars.takeWhile (fun c => c != ',' && !c.isWhitespace)
   -- Split on tilde for active frame range
   let beforeTilde := chars.takeWhile (fun c => c != '~')
   let afterTilde := (chars.dropWhile (fun c => c != '~')).drop 1
@@ -177,5 +178,38 @@ theorem activeFrames_ge_one (d : StartupData) (n : Nat)
     · injection h with h; omega
     · injection h with h; omega
   · injection h
+
+/--
+  Multi-hit startup: space-separated hits only take first hit.
+  "i13 i32~75" → startup 13, no activeEnd (not 75 from second hit).
+  Regression test: prevents the bug where tilde from subsequent hits
+  contaminated the first hit's activeEnd.
+-/
+theorem parseStartupFrame_multi_hit_space :
+    parseStartupFrame "i13 i32~75" = some { startup := 13, activeEnd := none } := by
+  rfl
+
+/--
+  Multi-hit startup: comma-separated hits only take first hit.
+-/
+theorem parseStartupFrame_multi_hit_comma :
+    parseStartupFrame "i10,i12" = some { startup := 10, activeEnd := none } := by
+  rfl
+
+/--
+  Single-hit startup with active frame range is preserved.
+  "i12~13" → startup 12, activeEnd 13.
+-/
+theorem parseStartupFrame_preserves_range :
+    parseStartupFrame "i12~13" = some { startup := 12, activeEnd := some 13 } := by
+  rfl
+
+/--
+  Plain startup without range.
+  "i15" → startup 15, no activeEnd.
+-/
+theorem parseStartupFrame_plain :
+    parseStartupFrame "i15" = some { startup := 15, activeEnd := none } := by
+  rfl
 
 end TekkenQuery.Frame

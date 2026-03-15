@@ -1,277 +1,300 @@
 # tekken_query
 
-Formally verified Tekken 8 frame data query tool written in Lean 4.
+Formally verified Tekken 8 frame data query tool.
 
-Core logic (CSV parsing, frame parsing, data models, filtering) is implemented in Lean 4
-with formal proofs. No `sorry`, `unsafe`, `partial`, `implemented_by`, `native_decide`,
-or user-defined `axiom` — the Lean kernel verifies everything.
+All data logic — CSV parsing, frame data parsing, filtering, comparisons — is implemented in [Lean 4](https://lean-lang.org/) with mathematical proofs checked by the Lean kernel. The interactive CLI is written in Rust. No `sorry`, no `unsafe`, no shortcuts.
+
+## Quick Start
+
+### Download
+
+Grab the latest release for your platform from [Releases](../../releases):
+
+```
+tekken-query-linux-x86_64.tar.gz
+tekken-query-macos-arm64.tar.gz
+tekken-query-macos-x86_64.tar.gz
+tekken-query-windows-x86_64.zip
+```
+
+Each archive contains two binaries:
+- `tekken-cli` — the interactive CLI
+- `tekken_query` — the verified Lean core
+
+Place both in the same directory (or anywhere on your `PATH`).
+
+### Run
+
+```bash
+# Interactive mode (recommended) — auto-fetches data on first run
+tekken-cli interactive
+
+# One-shot query
+tekken-cli query jin mid plus homing
+
+# Compare two characters
+tekken-cli compare jin kazuya mid plus
+```
+
+## Usage
+
+### Interactive REPL
+
+```bash
+tekken-cli interactive
+```
+
+Two-level interface: pick a character, then query their moves.
+
+**Character selection:**
+```
+Character? > jin          # fuzzy match: jin, kaz, devil, yoshi...
+Character? > df1          # global move lookup across all characters
+Character? > ewgf         # aliases work too
+Character? > list         # show all characters
+Character? > list-all     # roster overview (+OB count, HS startup)
+```
+
+**Move queries** (filters are AND'd together):
+```
+Jin > mid plus            # plus-on-block mids
+Jin > i<15 hom            # fast homing moves
+Jin > low !punish         # safe lows
+Jin > heat                # all heat moves (engager + smash + burst + H. state)
+Jin > hit>0 mid           # mids that are plus on hit
+Jin > ch>=5 low           # lows with counter-hit advantage >= +5
+Jin > <+5                 # moves with block frame < +5
+Jin > stance:ZEN          # moves from a specific stance
+Jin > cmd:df+2            # search by command notation
+Jin > pc !high            # non-high power crushes
+```
+
+**Move lookup** (with fuzzy matching and notation shortcuts):
+```
+Jin > df2                 # auto-expands to df+2
+Jin > cd2                 # crouch dash shorthand: f,n,d,df+2
+Jin > ewgf                # move alias
+Jin > hopkick             # universal alias
+Jin > hellsweep           # character-specific alias
+```
+
+### CLI Commands
+
+```bash
+tekken-cli interactive          # interactive REPL (alias: i)
+tekken-cli query <char> <filters...>   # one-shot query
+tekken-cli move <char> <command>       # look up a specific move
+tekken-cli compare <char1> <char2> <filters...>  # side-by-side comparison
+tekken-cli chars                # list all characters
+tekken-cli stats <char>         # character stats summary
+tekken-cli check                # check for upstream data updates
+tekken-cli fetch                # download/update frame data
+```
+
+### Filter Reference
+
+| Filter | Meaning |
+|--------|---------|
+| `high`, `mid`, `low` | Hit level |
+| `throw` | Throw moves |
+| `plus` | Plus on block (> 0) |
+| `minus` | Negative but safe (-1 to -9) |
+| `punish` | Punishable (<= -10) |
+| `guardable` | Opponent can still guard on block |
+| `i15`, `i<15`, `i>=15` | Startup frame comparisons |
+| `<+5`, `>-10`, `<=0`, `>=+3` | Block frame comparisons |
+| `block<+5` | Explicit block frame comparison |
+| `hit>0`, `hit>=5` | Hit frame comparison |
+| `ch>0`, `ch>=5` | Counter-hit frame comparison |
+| `he`, `hs`, `hb` | Heat engager / smash / burst |
+| `heat` | All heat moves (engager + smash + burst + heat-state `H.` moves) |
+| `pc` | Power crush |
+| `hom` | Homing |
+| `trn` | Tornado (tailspin) |
+| `spk` | Spike |
+| `js`, `cs` | Jump status / crouch status |
+| `elb`, `kne`, `hed`, `wpn` | Elbow / knee / headbutt / weapon (unparryable) |
+| `bbr`, `wbr`, `fbr` | Balcony / wall / floor break |
+| `active3+` | Active frames >= 3 |
+| `stance`, `stance:ZEN` | Any stance move / specific stance |
+| `cmd:df+2` | Command substring search |
+| `name:uppercut` | Move name search |
+| `note:crush` | Notes search |
+| `!<filter>` | Negate any filter |
+
+### Aliases
+
+Built-in aliases for common community terminology:
+
+| Alias | Expands to |
+|-------|-----------|
+| `ewgf`, `dorya` | Electric Wind God Fist |
+| `wgf` | Wind God Fist |
+| `hellsweep` | Crouch dash low sweep |
+| `hopkick` | uf+4 launcher |
+| `dickjab` | d+1 crouch jab |
+| `magic4` | Counter-hit launcher |
+| `cd` | All crouch dash moves |
+| `snakeedge` | Snake Edge |
+| `orbital` | Orbital Heel |
+| `tombstone` | Tombstone Pile Driver |
+| `giantswing` | Giant Swing |
+| `rageart`, `ragedrive` | Rage Art / Rage Drive |
+
+#### Custom Aliases
+
+Create your own aliases — saved to `data/aliases.json` and persisted across sessions:
+
+```
+Character? > alias pewgf cmd:f,n,d,df:2 name:perfect electric
+Character? > alias mysetup cmd:df+2 name:wind god
+
+Jin > pewgf                # uses your custom alias
+Jin > aliases              # list all custom aliases
+Jin > unalias pewgf        # remove an alias
+```
+
+Custom aliases override built-in ones, so you can redefine anything.
+
+### Notation Shortcuts
+
+Type shorthand in the REPL — it auto-expands:
+
+| You type | Expands to |
+|----------|-----------|
+| `df2` | `df+2` |
+| `uf4` | `uf+4` |
+| `ff2` | `f,F+2` |
+| `cd2` | `f,n,d,df+2` |
+| `b4` | `b+4` |
 
 ## Architecture
 
-```
-CSV file (semicolon-delimited, messy human-edited data)
-  │
-  ▼
-┌─────────────────────────────────────────────────┐
-│  Csv.Split    — character-by-character parser    │
-│                 handles multiline quoted fields   │
-│                 respects quotes across newlines   │
-├─────────────────────────────────────────────────┤
-│  Csv.Parser   — delimiter detection, cleaning    │
-│                 nan/empty → none, trim whitespace │
-│                 outputs List CleanRecord          │
-├─────────────────────────────────────────────────┤
-│  Models       — TekkenMove, MoveProperty, etc.   │
-│                 pure data, no IO                  │
-│                 tag strings → typed properties    │
-├─────────────────────────────────────────────────┤
-│  Frame        — "i13" → 13, "+5" → 5, "-10" → -10│
-│                 total parsers, no crashes          │
-├─────────────────────────────────────────────────┤
-│  Filter       — composable filter DSL             │
-│                 one eval function does everything  │
-│                 proven: subset, commutativity, etc.│
-└─────────────────────────────────────────────────┘
-  │
-  ▼
-Query results (List TekkenMove)
-```
-
-## Modules
-
-### `TekkenQuery.Csv.Split`
-Core CSV record splitter. Walks the entire input character by character in a single pass.
-Correctly handles:
-- Multiline quoted fields (newlines inside quotes are part of the field)
-- Delimiters inside quotes (`[12;12]` in damage values)
-- Both `\n` and `\r\n` line endings
-
-**Key function:** `splitRecords` — splits a CSV string into `List (List String)`.
-
-**Proof:** `splitRecordsAux_length_ge` — the parser always produces at least one record.
-
-### `TekkenQuery.Csv.Parser`
-High-level CSV parser. Detects delimiter (semicolon or comma), splits records,
-zips with headers, and cleans all values in one pipeline.
-
-**Key type:** `CleanRecord = List (String × Option String)` — each field is a
-`(headerName, cleanedValue)` pair where `None` means empty/nan/whitespace.
-
-**Key function:** `parse` — full CSV string → `Except ParseError ParseResult`.
-
-**Proofs:**
-- `zipAndClean_length` — output always has exactly `headers.length` pairs
-- `zipAndClean_keys` — output keys are exactly the header names
-- `buildRecords_length` — record count is preserved
-- `buildRecords_field_count` — every record has exactly `headers.length` fields
-
-### `TekkenQuery.Frame`
-Verified frame data parsers. Converts messy frame strings into structured data.
-No data loss — ranges, active frames, and guard suffixes are all preserved.
-
-#### `StartupData` — startup frame with active frame range
-
-| Input | Output | Notes |
-|-------|--------|-------|
-| `"i13"` | `{ startup := 13 }` | Single startup frame |
-| `"i12~13"` | `{ startup := 12, activeEnd := some 13 }` | 2 active frames (12 and 13) |
-| `"i19~34"` | `{ startup := 19, activeEnd := some 34 }` | 16 active frames |
-
-`StartupData.activeFrames` computes the count: `i12~13` → `some 2`.
-
-#### `BlockFrameData` — block advantage with guard suffix
-
-| Input | Output | Notes |
-|-------|--------|-------|
-| `"+5"` | `{ value := 5, guardable := false }` | +5 and opponent CANNOT block — free launch |
-| `"+15g"` | `{ value := 15, guardable := true }` | +15 but opponent CAN still block |
-| `"-10"` | `{ value := -10, guardable := false }` | Punishable |
-| `"-9g"` | `{ value := -9, guardable := true }` | Negative but guardable |
-| `"+4~+5"` | `{ value := 4, rangeEnd := some 5 }` | Range preserved |
-
-The `g` suffix is critical: `+15` (no g) means free launch, `+15g` means opponent can still guard.
-
-**Proofs:**
-- `negSucc_neg` — negative representation is always < 0
-- `negSucc_eq_neg` — `Int.negSucc (n-1) = -n` for positive n
-- `activeFrames_ge_one` — computed active frames are always ≥ 1
-
-### `TekkenQuery.Models`
-Pure data models. No IO, no side effects, all fields immutable.
-
-#### `MoveProperty` — typed move properties
-Every known CSV tag is a proper type constructor, not a raw string:
+Two layers with strict separation of concerns:
 
 ```
-MoveProperty
-├── Heat system:     heatEngager, heatSmash, heatBurst
-├── Combo:           tornado, spike
-├── Defensive:       powerCrush, jumpStatus, crouchStatus,
-│                    fullCrouchStatus, parryStatus, invincible
-│                    (each with optional FrameRange)
-├── Tracking:        homing
-├── Stage:           balconyBreak, wallBreak, floorBreak
-├── Parry immunity:  elbow, knee, headbutt, weapon
-└── Other:           reversalBreak, chipDamage
+GitHub (tekkendocs) --> Rust fetches raw CSVs --> Lean server converts to clean CSVs
+                                               --> Lean server evaluates filters
+                                               --> Rust displays results
 ```
 
-#### CSV tag → MoveProperty mapping
-Tags are parsed from the `Tags` column via `parseRawTag`:
+### Lean 4 — Verified Core
 
-| CSV tag | MoveProperty | Meaning |
-|---------|-------------|---------|
-| `he` | `.heatEngager` | Activates heat on hit |
-| `hs` | `.heatSmash` | H.command, consumes heat |
-| `hb` | `.heatBurst` | 2+3, universal heat activation |
-| `trn` | `.tornado` | Launches for combo (tailspin) |
-| `spk` | `.spike` | Spikes grounded opponent |
-| `pc` | `.powerCrush` | Absorbs hits during startup |
-| `js` | `.jumpStatus` | Airborne, crushes lows |
-| `cs` | `.crouchStatus` | Crouching, crushes highs |
-| `fs` | `.fullCrouchStatus` | Full crouch status |
-| `ps` | `.parryStatus` | Auto-parry window |
-| `is` | `.invincible` | Full invincibility |
-| `hom` | `.homing` | Tracks sidesteps |
-| `bbr` | `.balconyBreak` | Triggers balcony break |
-| `wbr` | `.wallBreak` | Triggers wall break |
-| `fbr` | `.floorBreak` | Triggers floor break |
-| `elb` | `.elbow` | Unparryable (elbow) |
-| `kne` | `.knee` | Unparryable (knee) |
-| `hed` | `.headbutt` | Unparryable (headbutt) |
-| `wpn` | `.weapon` | Unparryable (weapon) |
-| `rbr` | `.reversalBreak` | Breaks reversals |
-| `chp` | `.chipDamage` | Does chip damage on block |
+All data logic lives here. The Lean kernel mathematically verifies correctness.
 
-Frame-ranged tags like `pc7~16` carry a `FrameRange` indicating active frames.
+| Module | Purpose |
+|--------|---------|
+| `TekkenQuery/Csv/Split.lean` | Character-by-character CSV parser (multiline, quote-aware) |
+| `TekkenQuery/Csv/Parser.lean` | Delimiter detection, field cleaning, record building |
+| `TekkenQuery/Models.lean` | `TekkenMove`, `TekkenCharacter`, `MoveProperty` (19 typed properties) |
+| `TekkenQuery/Frame.lean` | Startup/block frame parsing with proofs |
+| `TekkenQuery/Filter.lean` | 25+ composable filters with 14 proofs (subset, commutativity, transitivity...) |
+| `TekkenQuery/Export.lean` | Clean CSV export with HTML stripping |
+| `TekkenQuery/Json.lean` | JSON serialization for server protocol |
+| `TekkenQuery/Server.lean` | Query server logic (load, query, compare, convert) |
+| `Main.lean` | IO layer: `--server` mode, `--export` mode |
 
-#### Adding a new property
-1. Add a constructor to `MoveProperty` in `Models.lean`
-2. Add a line in `parseRawTag` mapping the CSV tag code to the constructor
-3. Add a line in `MoveProperty.matchesKind` in `Filter.lean`
+### Rust — Interactive CLI
 
-That's it. No new functions, no new filter types, no booleans to thread through.
+Handles everything that isn't data logic: network, display, user input.
 
-#### Other key types
-- **`TekkenMove`** — a single move with all frame data and properties
-- **`TekkenCharacter`** — a character with their move list
-- **`FrameRange`** — optional start/end frame for status properties
+| Module | Purpose |
+|--------|---------|
+| `interactive.rs` | REPL loop, fuzzy matching, aliases, notation normalization |
+| `lean_server.rs` | Lean subprocess management (persistent server over stdin/stdout) |
+| `filter.rs` | Filter token parsing, Rust-side eval fallback |
+| `display.rs` | Color-coded terminal output, column alignment |
+| `fetch.rs` | GitHub API, raw CSV downloading |
+| `model.rs` | `Move`, `Character` structs |
+| `aliases.rs` | Custom user-defined move aliases (JSON config) |
+| `completion.rs` | Tab completion (filters, aliases, move commands, stances) |
 
-### `TekkenQuery.Filter`
-Composable filter DSL. One `Filter` type, one `eval` function, infinite combinations.
+### Query Server Protocol
 
-#### Filter constructors
+The Lean binary runs as a persistent subprocess. Rust communicates via line-delimited JSON on stdin/stdout:
 
-| Filter | What it matches |
-|--------|----------------|
-| `.hitLevel "m"` | Hit level starts with "m" (mid) |
-| `.isThrow` | Hit level contains "t" |
-| `.isUnblockable` | Hit level contains "!" |
-| `.plusOnBlock` | Block frame > 0 |
-| `.negative` | Block frame -1 to -9 |
-| `.punishable` | Block frame ≤ -10 |
-| `.blockFrameBetween lo hi` | lo ≤ block frame ≤ hi |
-| `.guardable` | Block frame has `g` suffix (opponent can still guard) |
-| `.startupEq n` | Startup == n frames |
-| `.startupLt n` | Startup < n (faster than) |
-| `.startupGt n` | Startup > n (slower than) |
-| `.startupLe n` | Startup ≤ n |
-| `.startupGe n` | Startup ≥ n |
-| `.activeFramesGe n` | At least n active frames |
-| `.stance "ZEN"` | From specific stance |
-| `.hasStance` | Any stance move |
-| `.property .powerCrush` | Has power crush property |
-| `.anyProperty [.heatEngager, .heatSmash, .heatBurst]` | Has any of these |
-| `.noteContains "rage art"` | Notes contain keyword |
-| `.nameContains "uppercut"` | Move name substring match |
-| `.commandContains "df"` | Command substring match |
-| `.hitLevelContains "m"` | Hit level substring match |
-| `.not f` | Negate a filter |
-| `.and f g` | Both must match |
-| `.or f g` | Either can match |
+| Method | Params | Response |
+|--------|--------|----------|
+| `load` | `id`, `name`, `path` | `moves_loaded` |
+| `query` | `character`, `filters` | `name`, `total`, `count`, `moves` |
+| `compare` | `char1`, `char2`, `filters` | `char1: {name, moves}`, `char2: ...` |
+| `convert` | `raw_path`, `clean_path` | `moves_exported` |
+| `quit` | -- | -- |
 
-#### Query functions
+The server protocol is designed to be reusable — a REST API or other frontend could use the same Lean binary.
 
-```lean
--- Find all plus-on-block mids
-query char (.and (.hitLevel "m") .plusOnBlock)
+## Building from Source
 
--- Find all homing power crushes
-query char (.and (.property .homing) (.property .powerCrush))
+### Requirements
 
--- All heat moves (engager, smash, or burst)
-query char (.anyProperty [.heatEngager, .heatSmash, .heatBurst])
+- [elan](https://github.com/leanprover/elan) (Lean 4 toolchain manager)
+- [Rust](https://rustup.rs/) (stable)
+- On NixOS: `nix shell nixpkgs#elan nixpkgs#rustup`
 
--- All unparryable moves
-query char (.anyProperty [.elbow, .knee, .headbutt, .weapon])
-
--- Moves faster than i15 that are plus on block
-query char (.and (.startupLt 15) .plusOnBlock)
-
--- Free launch moves: plus on block AND not guardable
-query char (.and .plusOnBlock (.not .guardable))
-
--- Moves with 3+ active frames
-query char (.activeFramesGe 3)
-
--- Chain multiple filters
-queryAll char [.hitLevel "m", .plusOnBlock, .property .homing]
-
--- Compare two characters
-compare jin kazuya (.property .heatEngager)
-```
-
-#### Proofs
-- `query_subset` — query results are always a subset of the move list
-- `filter_not_not` — double negation is identity
-- `filter_and_comm` — AND is commutative
-- `filter_or_comm` — OR is commutative
-- `queryAll_empty` — empty filter list returns all moves
-- `filter_and_left` / `filter_and_right` — AND implies each operand
-
-## Data pipeline
-
-```
-Raw CSV ("hb pc7~16")
-  → splitRecords (character-by-character, quote-aware)
-  → zipAndClean (pair with headers, clean nan/empty)
-  → TekkenMove.fromRecord (build typed move)
-    → parseStance ("ZEN.1+2" → stance="ZEN", cmd="1+2")
-    → parseTags ("hb pc7~16" → [.heatBurst, .powerCrush ⟨7, some 16⟩])
-    → startupFrameValue ("i12~13" → { startup := 12, activeEnd := some 13 })
-    → blockFrameValue ("+15g" → { value := 15, guardable := true })
-  → query/queryAll/compare (composable filters)
-```
-
-## Building
-
-Requires [elan](https://github.com/leanprover/elan) (Lean toolchain manager).
+### Build
 
 ```bash
-# NixOS
-nix shell nixpkgs#elan -c lake build
+# Build everything
+./scripts/build.sh
 
-# Other systems (with elan installed)
-lake build
+# Or manually:
+lake build                          # Lean core
+cd cli && cargo build --release     # Rust CLI
 ```
 
-## Running
+### Verify
 
 ```bash
-lake env .lake/build/bin/tekken_query path/to/character.csv
+# No banned constructs in Lean
+grep -rn 'sorry\|unsafe\|partial\|implemented_by\|native_decide' --include='*.lean' .
+# Should return nothing
+
+# Rust checks
+cd cli
+cargo clippy -- -D warnings         # zero warnings
+cargo test                          # all tests pass
 ```
 
-CSV files are semicolon-delimited frame data from
-[wavu.wiki](https://wavu.wiki/) (tekkendocs format).
+## Data Source
 
-## Strictness guarantees
+Frame data is sourced from [tekkendocs](https://github.com/pbruvoll/tekkendocs) (wavu.wiki). The CLI auto-fetches and converts data on first run. Updates are checked automatically in interactive mode.
 
-Enforced by `CLAUDE.md` rules and verified by the Lean kernel:
+Data flow:
+```
+Raw CSVs (messy, semicolon-delimited) --> Lean parser (verified) --> Clean CSVs --> queries
+```
+
+## Strictness Guarantees
+
+### Lean (verified by kernel)
 
 - No `sorry` — every proof is complete
 - No `unsafe` — no unchecked operations
-- No `partial` — all functions are total (terminate on all inputs)
-- No `implemented_by` — no escape hatches
+- No `partial` — all functions terminate on all inputs
+- No `implemented_by` — no escape hatches to unverified code
 - No `native_decide` — no runtime-only evaluation
 - No user-defined `axiom` — no unproven assumptions
-- All functions are pure — no side effects, no mutation
-- All data is immutable
+- All functions are pure, all data is immutable
+
+### Rust (enforced by compiler + clippy)
+
+- No `unsafe` — forbidden via `#![forbid(unsafe_code)]`
+- No `unwrap()`/`expect()`/`panic!()` — all errors handled via `Result`/`Option`
+- No lossy `as` casts — `TryFrom`/`From` only
+- Full clippy pedantic with zero warnings
+
+### Proofs
+
+The filter system includes 14+ mathematical proofs:
+
+- `query_subset` — query results are always a subset of the move list
+- `filter_not_not` — double negation is identity
+- `filter_and_comm` / `filter_or_comm` — boolean algebra
+- `compareOp_lt_neg_ge` / `compareOp_gt_neg_le` — operator duality
+- `compareOp_lt_trans` / `compareOp_le_trans` — transitivity
+- `compareOp_lt_implies_le` — ordering implications
+- And more (reflexivity, empty query identity, AND projection)
+
+## License
+
+TODO

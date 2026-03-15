@@ -13,6 +13,7 @@ use colored::Colorize;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
+use crate::aliases::{self, CustomAliases};
 use crate::completion::ReplHelper;
 use crate::data::Manifest;
 use crate::display;
@@ -157,10 +158,10 @@ fn load_character(
     crate::data::load_character(data_dir, &meta.id, &meta.name)
 }
 
-// ── Player slang aliases ──────────────────────────────────────────────
+// ── Player aliases ──────────────────────────────────────────────────
 
-/// Search criteria for a player slang alias.
-struct SlangAlias {
+/// Search criteria for a player alias (community terminology).
+struct MoveAlias {
     /// Display label for the alias (shown when resolved).
     label: &'static str,
     /// Command substrings to search for (case-insensitive).
@@ -169,85 +170,85 @@ struct SlangAlias {
     names: &'static [&'static str],
 }
 
-/// Look up a player slang term and return search criteria.
+/// Look up a player alias and return search criteria.
 ///
-/// Returns `None` if the term is not a known slang alias.
-fn lookup_slang(term: &str) -> Option<SlangAlias> {
+/// Returns `None` if the term is not a known alias.
+fn lookup_alias(term: &str) -> Option<MoveAlias> {
     let lower = term.to_lowercase();
     match lower.as_str() {
         // Mishima staples
-        "ewgf" | "dorya" => Some(SlangAlias {
+        "ewgf" | "dorya" => Some(MoveAlias {
             label: "Electric Wind God Fist",
             commands: &["f,n,d,df:2"],
             names: &["electric wind god fist", "electric"],
         }),
-        "wgf" => Some(SlangAlias {
+        "wgf" => Some(MoveAlias {
             label: "Wind God Fist",
             commands: &["f,n,d,df+2"],
             names: &["wind god fist"],
         }),
-        "hellsweep" => Some(SlangAlias {
+        "hellsweep" => Some(MoveAlias {
             label: "Hellsweep (crouch dash low)",
             commands: &["f,n,d,DF+4", "f,n,d,df+4"],
             names: &["spinning demon", "hell sweep", "inferno"],
         }),
 
         // Universal-ish moves
-        "hopkick" => Some(SlangAlias {
+        "hopkick" => Some(MoveAlias {
             label: "Hopkick (uf+4 launcher)",
             commands: &["uf+4"],
             names: &["hop kick", "hopkick"],
         }),
-        "dickjab" => Some(SlangAlias {
+        "dickjab" => Some(MoveAlias {
             label: "Dickjab (d+1 poke)",
             commands: &["d+1"],
             names: &["dickjab", "crouch jab"],
         }),
-        "magic4" => Some(SlangAlias {
+        "magic4" => Some(MoveAlias {
             label: "Magic 4 (counter-hit launcher)",
             commands: &[],
             names: &["magic 4"],
         }),
-        "rageart" => Some(SlangAlias {
+        "rageart" => Some(MoveAlias {
             label: "Rage Art",
             commands: &[],
             names: &["rage art"],
         }),
-        "ragedrive" => Some(SlangAlias {
+        "ragedrive" => Some(MoveAlias {
             label: "Rage Drive",
             commands: &[],
             names: &["rage drive"],
         }),
 
-        // Character-specific slang
-        "snakeedge" => Some(SlangAlias {
+        // Character-specific aliases
+        "snakeedge" => Some(MoveAlias {
             label: "Snake Edge",
             commands: &[],
             names: &["snake edge"],
         }),
-        "orbital" => Some(SlangAlias {
+        "orbital" => Some(MoveAlias {
             label: "Orbital Heel",
             commands: &[],
             names: &["orbital"],
         }),
-        "tombstone" => Some(SlangAlias {
+        "tombstone" => Some(MoveAlias {
             label: "Tombstone Pile Driver",
             commands: &[],
             names: &["tombstone"],
         }),
-        "giantswing" => Some(SlangAlias {
+        "giantswing" => Some(MoveAlias {
             label: "Giant Swing",
             commands: &[],
             names: &["giant swing"],
         }),
-        "demonspaw" | "demonpaw" => Some(SlangAlias {
+        "demonspaw" | "demonpaw" => Some(MoveAlias {
             label: "Demon's Paw (f,F+2)",
             commands: &["f,F+2"],
             names: &["demon's paw"],
         }),
 
         // Crouch dash moves
-        "cd" | "crouchdash" => Some(SlangAlias {
+        "cd" | "crouchdash" => Some(MoveAlias {
             label: "Crouch dash moves",
             commands: &["f,n,d,df", "f,n,d,DF"],
             names: &[],
@@ -255,6 +256,45 @@ fn lookup_slang(term: &str) -> Option<SlangAlias> {
 
         _ => None,
     }
+}
+
+/// A resolved alias with owned data (unified across custom and built-in).
+struct ResolvedAlias {
+    label: String,
+    commands: Vec<String>,
+    names: Vec<String>,
+}
+
+/// Resolve an alias, checking custom aliases first, then built-in.
+fn resolve_alias(term: &str, custom: &CustomAliases) -> Option<ResolvedAlias> {
+    // Custom aliases take priority
+    if let Some(ca) = custom.lookup(term) {
+        return Some(ResolvedAlias {
+            label: ca.label.clone(),
+            commands: ca.commands.clone(),
+            names: ca.names.clone(),
+        });
+    }
+    // Fall back to built-in
+    lookup_alias(term).map(|a| ResolvedAlias {
+        label: a.label.to_string(),
+        commands: a.commands.iter().map(|s| (*s).to_string()).collect(),
+        names: a.names.iter().map(|s| (*s).to_string()).collect(),
+    })
+}
+
+/// Check if a move matches a resolved alias.
+fn move_matches_alias(m: &Move, alias: &ResolvedAlias) -> bool {
+    let cmd_lower = m.command.to_lowercase();
+    let name_lower = m.name.to_lowercase();
+    alias
+        .commands
+        .iter()
+        .any(|c| cmd_lower.contains(&c.to_lowercase()))
+        || alias
+            .names
+            .iter()
+            .any(|n| name_lower.contains(&n.to_lowercase()))
 }
 
 // ── Notation normalization ────────────────────────────────────────────
@@ -270,6 +310,14 @@ fn lookup_slang(term: &str) -> Option<SlangAlias> {
 /// doesn't match any known pattern.
 fn normalize_notation(input: &str) -> Option<String> {
     let s = input.to_lowercase();
+
+    // Crouch dash shorthand: cd2 → f,n,d,df+2, cd+2 → f,n,d,df+2
+    if let Some(rest) = s.strip_prefix("cd") {
+        let rest = rest.strip_prefix('+').unwrap_or(rest);
+        if rest.starts_with(|c: char| c.is_ascii_digit()) {
+            return Some(format!("f,n,d,df+{rest}"));
+        }
+    }
 
     // Order matters: compound/double directions before single
     let mappings: &[(&str, &str)] = &[
@@ -327,7 +375,7 @@ fn cmd_contains(move_cmd: &str, norm_input: &str, norm_alt: Option<&str>) -> boo
 /// Try to find a move by command string.
 ///
 /// Priority: exact > alias > normalized exact > prefix > substring > name > fuzzy.
-fn try_move_lookup(character: &Character, input: &str) {
+fn try_move_lookup(character: &Character, input: &str, custom_aliases: &CustomAliases) {
     let norm_input = normalize_cmd(input);
     let notation_alt = normalize_notation(input);
     let alt_ref = notation_alt.as_deref();
@@ -345,23 +393,12 @@ fn try_move_lookup(character: &Character, input: &str) {
         return;
     }
 
-    // 2. Slang alias lookup
-    if let Some(alias) = lookup_slang(input) {
+    // 2. Alias lookup (custom first, then built-in)
+    if let Some(alias) = resolve_alias(input, custom_aliases) {
         let results: Vec<&Move> = character
             .moves
             .iter()
-            .filter(|m| {
-                let cmd_lower = m.command.to_lowercase();
-                let name_lower = m.name.to_lowercase();
-                alias
-                    .commands
-                    .iter()
-                    .any(|c| cmd_lower.contains(&c.to_lowercase()))
-                    || alias
-                        .names
-                        .iter()
-                        .any(|n| name_lower.contains(n))
-            })
+            .filter(|m| move_matches_alias(m, &alias))
             .collect();
         if results.is_empty() {
             eprintln!("No '{input}' moves for this character");
@@ -434,6 +471,125 @@ fn show_move_table(moves: &[&Move], query: &str) {
     }
 }
 
+// ── Global move lookup ───────────────────────────────────────────────
+
+/// Check if input looks like a move command rather than a character name.
+///
+/// Heuristics: contains digits, `+`, or is a known alias.
+fn looks_like_move_input(input: &str, custom_aliases: &CustomAliases) -> bool {
+    if input.chars().any(|c| c.is_ascii_digit()) {
+        return true;
+    }
+    if input.contains('+') {
+        return true;
+    }
+    resolve_alias(input, custom_aliases).is_some()
+}
+
+/// Look up a move command across all characters.
+///
+/// Used from the character select screen to compare a specific move
+/// (e.g., `df1`) across the entire roster.
+fn global_move_lookup(
+    data_dir: &Path,
+    manifest: &Manifest,
+    input: &str,
+    custom_aliases: &CustomAliases,
+) {
+    let norm_input = normalize_cmd(input);
+    let notation_alt = normalize_notation(input);
+    let alt_ref = notation_alt.as_deref();
+    let resolved = resolve_alias(input, custom_aliases);
+
+    if let Some(ref alias) = resolved {
+        eprintln!("{input} → {}", alias.label);
+    }
+
+    let characters: Vec<Character> = manifest
+        .characters
+        .iter()
+        .filter_map(|meta| load_character(data_dir, meta).ok())
+        .collect();
+
+    let mut found: Vec<(&str, &Move)> = Vec::new();
+
+    for character in &characters {
+        for m in &character.moves {
+            let is_match = cmd_matches(&m.command, &norm_input, alt_ref)
+                || resolved
+                    .as_ref()
+                    .is_some_and(|alias| move_matches_alias(m, alias));
+
+            if is_match {
+                found.push((&character.name, m));
+            }
+        }
+    }
+
+    if found.is_empty() {
+        eprintln!("No character has a move matching '{input}'");
+        return;
+    }
+
+    display::print_global_move_table(&found, input);
+}
+
+/// Print character overview stats (list-all).
+///
+/// Shows per-character: plus-on-block count, plus-on-hit lows count,
+/// and heat smash startup.
+fn cmd_list_all(data_dir: &Path, manifest: &Manifest) {
+    let mut overviews: Vec<display::CharOverview> = Vec::new();
+
+    for meta in &manifest.characters {
+        let Ok(character) = load_character(data_dir, meta) else {
+            continue;
+        };
+
+        let plus_on_block = character.moves.iter().filter(|m| m.is_plus()).count();
+        let plus_on_hit_lows = character
+            .moves
+            .iter()
+            .filter(|m| m.is_low() && m.is_plus_on_hit())
+            .count();
+
+        // Collect ALL heat smashes — some characters have 2.
+        // Multi-hit moves can have concatenated startup values (data issue),
+        // so filter to sane values (<=100 frames for both startup and end).
+        let hs_startups: Vec<String> = character
+            .moves
+            .iter()
+            .filter(|m| {
+                m.has_tag("hs")
+                    && m.startup.is_some_and(|s| s <= 100)
+                    && m.startup_end.is_none_or(|e| e <= 100)
+            })
+            .map(Move::startup_display)
+            .collect();
+        // Deduplicate (some characters have identical HS startups)
+        let mut unique_hs: Vec<String> = Vec::new();
+        for s in &hs_startups {
+            if !unique_hs.contains(s) {
+                unique_hs.push(s.clone());
+            }
+        }
+        let hs_startup = if unique_hs.is_empty() {
+            "?".to_string()
+        } else {
+            unique_hs.join(" / ")
+        };
+
+        overviews.push(display::CharOverview {
+            name: character.name,
+            plus_on_block,
+            plus_on_hit_lows,
+            hs_startup,
+        });
+    }
+
+    display::print_character_overview(&overviews);
+}
+
 // ── Help text ───────────────────────────────────────────────────────
 
 /// Print the character list.
@@ -451,7 +607,16 @@ fn print_character_list(manifest: &Manifest) {
 fn print_char_help() {
     eprintln!("{}", "Commands:".bold());
     eprintln!("  <name>     Select a character (fuzzy match: jin, kaz, devil, yoshi...)");
+    eprintln!("  <move>     Look up a move across all characters (df1, ewgf, hopkick...)");
     eprintln!("  list       Show all characters");
+    eprintln!("  list-all   Character overview (+OB, +OH lows, HS startup)");
+    eprintln!();
+    eprintln!("{}", "Aliases:".bold());
+    eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]");
+    eprintln!("               Create a custom move alias");
+    eprintln!("  unalias <name>  Remove a custom alias");
+    eprintln!("  aliases    List custom aliases");
+    eprintln!();
     eprintln!("  quit       Exit");
 }
 
@@ -471,7 +636,7 @@ fn print_query_help() {
     eprintln!();
     eprintln!("{}", "Move lookup:".bold());
     eprintln!("  <command>  Look up a move (df2, uf4, ws4, b+1+2...)");
-    eprintln!("  <slang>    Player slang aliases:");
+    eprintln!("  <alias>    Move aliases:");
     eprintln!("             ewgf, wgf, hellsweep, hopkick, dickjab,");
     eprintln!("             snakeedge, orbital, tombstone, giantswing,");
     eprintln!("             demonspaw, rageart, cd, magic4");
@@ -479,7 +644,14 @@ fn print_query_help() {
     eprintln!("{}", "Notation shortcuts:".bold());
     eprintln!("  df2 → df+2, uf4 → uf+4, ff2 → f,F+2, b4 → b+4");
     eprintln!();
+    eprintln!("{}", "Aliases:".bold());
+    eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]");
+    eprintln!("               Create a custom move alias");
+    eprintln!("  unalias <name>  Remove a custom alias");
+    eprintln!("  aliases    List custom aliases");
+    eprintln!();
     eprintln!("{}", "Other:".bold());
+    eprintln!("  list       Show full movelist");
     eprintln!("  stats      Show character stats");
     eprintln!("  back       Return to character selection");
     eprintln!("  quit       Exit");
@@ -603,6 +775,8 @@ fn character_loop(
     rl: &mut Editor<ReplHelper, rustyline::history::DefaultHistory>,
     character: &Character,
     server: &mut Option<LeanServer>,
+    custom_aliases: &mut CustomAliases,
+    data_dir: &Path,
 ) -> Result<LoopAction, CliError> {
     eprintln!(
         "\n{} ({} moves)",
@@ -629,7 +803,31 @@ fn character_loop(
                 display::print_character_stats(&character.name, &character.moves);
                 continue;
             }
+            "list" | "ls" | "all" => {
+                let refs: Vec<&Move> = character.moves.iter().collect();
+                eprintln!("{} — {} moves", character.name.bold(), refs.len());
+                let cols = display::layout_for(&refs);
+                display::print_header(&cols);
+                for m in &refs {
+                    eprintln!("{}", display::format_move_row(m, &cols));
+                }
+                continue;
+            }
+            "aliases" => {
+                print_aliases(custom_aliases);
+                continue;
+            }
             _ => {}
+        }
+
+        // Alias management commands
+        if let Some(rest) = input.strip_prefix("alias ") {
+            handle_alias_add(rest.trim(), custom_aliases, data_dir);
+            continue;
+        }
+        if let Some(rest) = input.strip_prefix("unalias ") {
+            handle_alias_remove(rest.trim(), custom_aliases, data_dir);
+            continue;
         }
 
         // Try as filter query first
@@ -642,7 +840,7 @@ fn character_loop(
             }
             _ => {
                 // Try as move command lookup (with fuzzy)
-                try_move_lookup(character, &input);
+                try_move_lookup(character, &input, custom_aliases);
             }
         }
     }
@@ -682,18 +880,79 @@ fn server_load_character(
     }
 }
 
-/// Run the interactive REPL.
+// ── Alias management ─────────────────────────────────────────────────
+
+/// Handle `alias <name> cmd:<pattern> [name:<pattern>]`.
+fn handle_alias_add(args: &str, custom_aliases: &mut CustomAliases, data_dir: &Path) {
+    match aliases::parse_alias_command(args) {
+        Ok((name, alias)) => {
+            eprintln!("Alias '{}' → {}", name, alias.label);
+            if !alias.commands.is_empty() {
+                eprintln!("  commands: {}", alias.commands.join(", "));
+            }
+            if !alias.names.is_empty() {
+                eprintln!("  names: {}", alias.names.join(", "));
+            }
+            custom_aliases.add(&name, alias);
+            if let Err(e) = custom_aliases.save(data_dir) {
+                eprintln!("warning: failed to save aliases: {e}");
+            }
+        }
+        Err(e) => eprintln!("{e}"),
+    }
+}
+
+/// Handle `unalias <name>`.
+fn handle_alias_remove(name: &str, custom_aliases: &mut CustomAliases, data_dir: &Path) {
+    if name.is_empty() {
+        eprintln!("usage: unalias <name>");
+        return;
+    }
+    if custom_aliases.remove(name) {
+        eprintln!("Removed alias '{name}'");
+        if let Err(e) = custom_aliases.save(data_dir) {
+            eprintln!("warning: failed to save aliases: {e}");
+        }
+    } else {
+        eprintln!("No custom alias '{name}'");
+    }
+}
+
+/// Print all custom aliases.
+fn print_aliases(custom_aliases: &CustomAliases) {
+    if custom_aliases.len() == 0 {
+        eprintln!("No custom aliases. Add one with: alias <name> cmd:<pattern>");
+        return;
+    }
+    eprintln!("Custom aliases ({}):", custom_aliases.len());
+    for (name, alias) in custom_aliases.iter() {
+        let mut parts = Vec::new();
+        for c in &alias.commands {
+            parts.push(format!("cmd:{c}"));
+        }
+        for n in &alias.names {
+            parts.push(format!("name:{n}"));
+        }
+        eprintln!("  {:<16} {} [{}]", name, alias.label, parts.join(" "));
+    }
+}
+
+/// Initialize the REPL: start server, check updates, load manifest.
 ///
-/// On startup: checks for upstream data updates and fetches if needed.
-/// Tries to start the Lean query server for verified filter evaluation.
-/// Then enters a two-level loop: character selection → move query.
-/// Uses rustyline for tab completion and command history.
-pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
+/// Returns the server, manifest, and whether data was updated.
+fn init_repl(
+    data_dir: &Path,
+) -> Result<(Option<LeanServer>, Manifest, bool), CliError> {
     eprintln!("{}", "Tekken 8 Frame Data Query".bold());
     eprintln!();
 
-    // Check for updates and load manifest
-    let (manifest, updated) = crate::fetch::update_if_needed(data_dir)?;
+    // Start the Lean query server BEFORE update check so it can handle
+    // raw → clean conversion during fetch (faster than spawning per-character)
+    let mut server = try_start_server(data_dir);
+
+    // Check for updates and load manifest (uses server for conversion if available)
+    let (manifest, updated) =
+        crate::fetch::update_if_needed(data_dir, server.as_mut())?;
 
     if updated {
         eprintln!();
@@ -704,8 +963,20 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
         manifest.updated
     );
 
-    // Try to start the Lean query server (optional — falls back to Rust)
-    let mut server = try_start_server(data_dir);
+    Ok((server, manifest, updated))
+}
+
+/// Run the interactive REPL.
+///
+/// On startup: checks for upstream data updates and fetches if needed.
+/// Tries to start the Lean query server for verified filter evaluation.
+/// Then enters a two-level loop: character selection → move query.
+/// Uses rustyline for tab completion and command history.
+pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
+    let (mut server, manifest, _updated) = init_repl(data_dir)?;
+
+    // Load custom aliases
+    let mut custom_aliases = CustomAliases::load(data_dir);
 
     // Set up rustyline editor
     let mut rl = Editor::<ReplHelper, rustyline::history::DefaultHistory>::new()
@@ -728,15 +999,39 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
                 print_character_list(&manifest);
                 continue;
             }
+            "list-all" | "la" => {
+                cmd_list_all(data_dir, &manifest);
+                continue;
+            }
             "help" | "?" => {
                 print_char_help();
+                continue;
+            }
+            "aliases" => {
+                print_aliases(&custom_aliases);
                 continue;
             }
             _ => {}
         }
 
+        // Alias management commands (available from character select too)
+        if let Some(rest) = input.strip_prefix("alias ") {
+            handle_alias_add(rest.trim(), &mut custom_aliases, data_dir);
+            continue;
+        }
+        if let Some(rest) = input.strip_prefix("unalias ") {
+            handle_alias_remove(rest.trim(), &mut custom_aliases, data_dir);
+            continue;
+        }
+
         // Find character (with fuzzy matching)
         let Some(meta) = find_character(&input, &manifest) else {
+            // If it looks like a move command, do a global lookup
+            if looks_like_move_input(&input, &custom_aliases) {
+                global_move_lookup(data_dir, &manifest, &input, &custom_aliases);
+                continue;
+            }
+
             // Show close matches
             let lower = input.to_lowercase();
             let suggestions: Vec<_> = manifest
@@ -773,7 +1068,7 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
         }
 
         // Enter character query loop
-        match character_loop(&mut rl, &character, &mut server)? {
+        match character_loop(&mut rl, &character, &mut server, &mut custom_aliases, data_dir)? {
             LoopAction::Back => {
                 // Restore character selection completer
                 let char_helper = ReplHelper::CharacterSelect {

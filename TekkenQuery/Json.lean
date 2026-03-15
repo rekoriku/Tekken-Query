@@ -135,6 +135,26 @@ def parseFilterJson (j : Json) (fuel : Nat) : Except String Filter :=
     | "hitLevelContains" => do
       let v ← j.getObjValAs? String "value"
       return .hitLevelContains v
+    -- Heat-state moves
+    | "heatMove" => return .isHeatMove
+    -- Frame comparison
+    | "frameCompare" => do
+      let fieldStr ← j.getObjValAs? String "field"
+      let opStr ← j.getObjValAs? String "op"
+      let value ← j.getObjValAs? Int "value"
+      let field ← match fieldStr with
+        | "block" => .ok FrameField.block
+        | "hit" => .ok FrameField.hit
+        | "counterHit" => .ok FrameField.counterHit
+        | other => .error s!"unknown frame field: {other}"
+      let op ← match opStr with
+        | "lt" => .ok CompareOp.lt
+        | "le" => .ok CompareOp.le
+        | "eq" => .ok CompareOp.eq
+        | "ge" => .ok CompareOp.ge
+        | "gt" => .ok CompareOp.gt
+        | other => .error s!"unknown compare op: {other}"
+      return .frameCompare field op value
     -- Combinators (recursive — fuel decreases)
     | "not" => do
       let inner ← j.getObjVal? "inner"

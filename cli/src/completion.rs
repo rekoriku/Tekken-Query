@@ -18,10 +18,13 @@ const FILTER_TOKENS: &[&str] = &[
     "stance",
     "cmd:", "name:", "note:", "stance:",
     "active",
+    "hit>", "hit<", "hit>=", "hit<=", "hit=",
+    "ch>", "ch<", "ch>=", "ch<=", "ch=",
+    "block>", "block<", "block>=", "block<=", "block=",
 ];
 
-/// All known slang terms for tab completion.
-const SLANG_TERMS: &[&str] = &[
+/// All known alias terms for tab completion.
+const ALIAS_TERMS: &[&str] = &[
     "ewgf", "wgf", "dorya", "hellsweep", "hopkick", "dickjab",
     "snakeedge", "orbital", "tombstone", "giantswing",
     "demonspaw", "demonpaw", "rageart", "ragedrive",
@@ -92,7 +95,7 @@ impl Completer for ReplHelper {
 
         let matches = match self {
             Self::CharacterSelect { characters } => {
-                let mut results = prefix_matches(prefix, &["list", "help", "quit"]);
+                let mut results = prefix_matches(prefix, &["list", "list-all", "help", "quit"]);
                 results.extend(prefix_matches_owned(prefix, characters));
                 results
             }
@@ -101,9 +104,9 @@ impl Completer for ReplHelper {
                 stances,
             } => {
                 let mut results =
-                    prefix_matches(prefix, &["stats", "back", "help", "quit"]);
+                    prefix_matches(prefix, &["list", "stats", "back", "help", "quit"]);
                 results.extend(prefix_matches(prefix, FILTER_TOKENS));
-                results.extend(prefix_matches(prefix, SLANG_TERMS));
+                results.extend(prefix_matches(prefix, ALIAS_TERMS));
                 results.extend(prefix_matches_owned(prefix, move_commands));
 
                 // Complete stance: prefix with actual stance names

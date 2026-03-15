@@ -11,7 +11,7 @@ use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use serde_json::Value;
 
 use crate::error::CliError;
-use crate::filter::Filter;
+use crate::filter::{CompareOp, Filter, FrameField};
 use crate::model::Move;
 
 /// A persistent connection to the Lean query server.
@@ -175,6 +175,44 @@ impl LeanServer {
         })
     }
 
+    /// Convert a raw CSV file to a clean CSV file via the Lean server.
+    ///
+    /// Returns the number of moves exported.
+    pub fn export_character(
+        &mut self,
+        raw_path: &Path,
+        clean_path: &Path,
+    ) -> Result<usize, CliError> {
+        let raw_str = raw_path
+            .to_str()
+            .ok_or_else(|| CliError::IoError("non-UTF-8 raw path".into()))?;
+        let clean_str = clean_path
+            .to_str()
+            .ok_or_else(|| CliError::IoError("non-UTF-8 clean path".into()))?;
+
+        let request = serde_json::json!({
+            "id": self.next_id(),
+            "method": "convert",
+            "params": {
+                "raw_path": raw_str,
+                "clean_path": clean_str,
+            }
+        });
+
+        let response = self.send_request(&request)?;
+        let result = get_result(&response)?;
+
+        let moves_exported = result
+            .get("moves_exported")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| {
+                CliError::ParseError("missing moves_exported in response".into())
+            })?;
+
+        usize::try_from(moves_exported)
+            .map_err(|_| CliError::ParseError("moves_exported too large".into()))
+    }
+
     /// Send quit and wait for the server to exit.
     pub fn quit(mut self) {
         let request = serde_json::json!({
@@ -256,15 +294,6 @@ fn filter_to_json(filter: &Filter) -> Value {
             serde_json::json!({"filter": "startupGe", "value": n})
         }
         Filter::Tag(tag) => tag_to_property_json(tag),
-        Filter::AnyTag(tags) => {
-            let props: Vec<String> = tags.iter().filter_map(|t| tag_to_property_name(t)).collect();
-            if props.is_empty() {
-                // Fallback: if no property mapping, use noteContains on first tag
-                serde_json::json!({"filter": "noteContains", "value": tags.first().map_or("", String::as_str)})
-            } else {
-                serde_json::json!({"filter": "anyProperty", "value": props})
-            }
-        }
         Filter::ActiveGe(n) => {
             serde_json::json!({"filter": "activeFramesGe", "value": n})
         }
@@ -280,6 +309,27 @@ fn filter_to_json(filter: &Filter) -> Value {
         }
         Filter::NoteContains(q) => {
             serde_json::json!({"filter": "noteContains", "value": q})
+        }
+        Filter::HeatMove => serde_json::json!({"filter": "heatMove"}),
+        Filter::FrameCompare(field, op, value) => {
+            let field_str = match field {
+                FrameField::Block => "block",
+                FrameField::Hit => "hit",
+                FrameField::CounterHit => "counterHit",
+            };
+            let op_str = match op {
+                CompareOp::Lt => "lt",
+                CompareOp::Le => "le",
+                CompareOp::Eq => "eq",
+                CompareOp::Ge => "ge",
+                CompareOp::Gt => "gt",
+            };
+            serde_json::json!({
+                "filter": "frameCompare",
+                "field": field_str,
+                "op": op_str,
+                "value": value
+            })
         }
         Filter::Not(inner) => {
             serde_json::json!({"filter": "not", "inner": filter_to_json(inner)})

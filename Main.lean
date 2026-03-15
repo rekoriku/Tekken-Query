@@ -27,6 +27,39 @@ def loadCharacterFromCsv (id name path : String) : IO (Except String TekkenChara
     return .error s!"failed to read file: {path}"
 
 /--
+  Convert raw CSV content to clean CSV content (pure).
+  Parses the raw CSV, converts each record to a clean row, and produces
+  the clean CSV string with headers.
+-/
+def exportRawToClean (rawContent : String) : Except String String :=
+  match Csv.parse rawContent with
+  | .error .emptyInput   => .error "empty CSV file"
+  | .error .noHeader     => .error "CSV has no header"
+  | .error .singleColumn => .error "CSV has single column (wrong delimiter?)"
+  | .ok result =>
+    let moves := result.records.map TekkenMove.fromRecord
+    let headerLine := rowToCsvLine cleanCsvHeaders
+    let dataLines := moves.map (fun m => rowToCsvLine m.toCleanRow)
+    .ok (String.intercalate "\n" (headerLine :: dataLines) ++ "\n")
+
+/--
+  Convert a raw CSV file to a clean CSV file (IO wrapper).
+  Returns the number of moves exported, or an error message.
+-/
+def convertFileIO (rawPath cleanPath : String) : IO (Except String Nat) := do
+  try
+    let rawContent ← IO.FS.readFile rawPath
+    match exportRawToClean rawContent with
+    | .error e => return .error e
+    | .ok cleanContent =>
+      IO.FS.writeFile cleanPath cleanContent
+      -- Count moves (lines minus header)
+      let lineCount := (cleanContent.splitOn "\n").filter (fun l => !l.isEmpty) |>.length
+      return .ok (lineCount - 1)
+  catch _ =>
+    return .error s!"failed to read file: {rawPath}"
+
+/--
   Send a JSON response on stdout (one line, then flush).
 -/
 def sendResponse (stdout : IO.FS.Stream) (response : Json) : IO Unit := do
@@ -63,6 +96,17 @@ def serverLoop (fuel : Nat) (state : ServerState) (stdin stdout : IO.FS.Stream) 
           ])
           sendResponse stdout response
           serverLoop fuel newState stdin stdout
+        | .error e =>
+          sendResponse stdout (mkErrorResponse reqId e)
+          serverLoop fuel currentState stdin stdout
+      | .convertFile currentState rawPath cleanPath reqId => do
+        match ← convertFileIO rawPath cleanPath with
+        | .ok moveCount =>
+          let response := mkOkResponse reqId (Json.mkObj [
+            ("moves_exported", toJson moveCount)
+          ])
+          sendResponse stdout response
+          serverLoop fuel currentState stdin stdout
         | .error e =>
           sendResponse stdout (mkErrorResponse reqId e)
           serverLoop fuel currentState stdin stdout

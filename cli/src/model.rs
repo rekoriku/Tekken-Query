@@ -67,6 +67,34 @@ impl Move {
         self.block_frame.is_some_and(|v| v <= -10)
     }
 
+    /// Parse the hit frame string to an optional numeric value.
+    ///
+    /// Handles formats like "+7", "-3", "KND", "Launch", etc.
+    /// Returns `None` for non-numeric values.
+    pub fn hit_frame_value(&self) -> Option<i64> {
+        let trimmed = self.hit_frame.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let stripped = trimmed.trim_start_matches('+');
+        stripped
+            .chars()
+            .take_while(|c| *c == '-' || c.is_ascii_digit())
+            .collect::<String>()
+            .parse::<i64>()
+            .ok()
+    }
+
+    /// Whether this move is plus on hit.
+    pub fn is_plus_on_hit(&self) -> bool {
+        self.hit_frame_value().is_some_and(|v| v > 0)
+    }
+
+    /// Whether this move is a low (hit level starts with "l").
+    pub fn is_low(&self) -> bool {
+        self.hit_level.to_lowercase().starts_with('l')
+    }
+
     /// Format block frame for display.
     pub fn block_frame_display(&self) -> String {
         match self.block_frame {

@@ -10,6 +10,31 @@ import TekkenQuery.Models
 
 namespace TekkenQuery
 
+-- ============================================================
+-- Frame comparison types
+-- ============================================================
+
+/-- Which frame data field to compare. -/
+inductive FrameField where
+  | block
+  | hit
+  | counterHit
+  deriving Repr, BEq, Inhabited
+
+/-- Comparison operator for frame data. -/
+inductive CompareOp where
+  | lt | le | eq | ge | gt
+  deriving Repr, BEq, Inhabited
+
+/-- Evaluate a comparison operator on two integers. -/
+def CompareOp.eval (op : CompareOp) (a b : Int) : Bool :=
+  match op with
+  | .lt => a < b
+  | .le => a ≤ b
+  | .eq => a == b
+  | .ge => a ≥ b
+  | .gt => a > b
+
 /--
   Check if a MoveProperty matches a given kind, ignoring frame range data.
   e.g., matchesKind (.powerCrush (some ⟨7, some 16⟩)) (.powerCrush none) = true
@@ -88,10 +113,14 @@ inductive Filter where
   | property (p : MoveProperty)             -- move has this property
   | anyProperty (ps : List MoveProperty)    -- move has any of these
   | noteContains (keyword : String)         -- notes contain keyword
+  -- Frame data comparison (block, hit, counter-hit × lt/le/eq/ge/gt)
+  | frameCompare (field : FrameField) (op : CompareOp) (value : Int)
   -- Text search
   | nameContains (query : String)       -- name substring match
   | commandContains (query : String)    -- command substring match
   | hitLevelContains (query : String)   -- hit level substring match (for compound levels)
+  -- Heat-state moves
+  | isHeatMove                         -- heat engager/smash/burst OR command starts with "H."
   -- Combinators
   | not (f : Filter)                    -- negate a filter
   | and (f g : Filter)                  -- both must match
@@ -172,6 +201,17 @@ def Filter.eval (f : Filter) (m : TekkenMove) : Bool :=
   | .property p => hasProperty m.properties p
   | .anyProperty ps => hasAnyProperty m.properties ps
   | .noteContains kw => hasNote m.properties kw
+  | .frameCompare field op value =>
+    let frameStr := match field with
+      | .block => m.blockFrame
+      | .hit => m.hitFrame
+      | .counterHit => m.counterHitFrame
+    match frameStr with
+    | none => false
+    | some s =>
+      match Frame.parseBlockFrame s with
+      | none => false
+      | some d => op.eval d.value value
   | .nameContains q =>
     match m.name with
     | some name => containsCI name q
@@ -182,6 +222,9 @@ def Filter.eval (f : Filter) (m : TekkenMove) : Bool :=
     match m.hitLevel with
     | some hl => containsCI hl q
     | none => false
+  | .isHeatMove =>
+    hasAnyProperty m.properties [.heatEngager, .heatSmash, .heatBurst]
+    || m.command.startsWith "H."
   | .not inner => !inner.eval m
   | .and f g => f.eval m && g.eval m
   | .or f g => f.eval m || g.eval m
@@ -267,5 +310,70 @@ theorem filter_and_right (f g : Filter) (m : TekkenMove)
     Filter.eval g m = true := by
   simp [Filter.eval] at h
   exact h.2
+
+/--
+  CompareOp.lt and CompareOp.ge are negations of each other.
+  If a value is not ≥ threshold, it must be < threshold.
+-/
+theorem compareOp_lt_neg_ge (a b : Int) :
+    CompareOp.eval .lt a b = !CompareOp.eval .ge a b := by
+  unfold CompareOp.eval
+  by_cases h : a < b <;> simp [h] <;> omega
+
+/--
+  CompareOp.gt and CompareOp.le are negations of each other.
+  If a value is not ≤ threshold, it must be > threshold.
+-/
+theorem compareOp_gt_neg_le (a b : Int) :
+    CompareOp.eval .gt a b = !CompareOp.eval .le a b := by
+  unfold CompareOp.eval
+  by_cases h : b < a <;> simp [h] <;> omega
+
+/--
+  CompareOp.eval .eq is reflexive.
+-/
+theorem compareOp_eq_refl (a : Int) :
+    CompareOp.eval .eq a a = true := by
+  simp [CompareOp.eval]
+
+/--
+  CompareOp.eval .le is reflexive.
+-/
+theorem compareOp_le_refl (a : Int) :
+    CompareOp.eval .le a a = true := by
+  simp [CompareOp.eval]
+
+/--
+  CompareOp.eval .ge is reflexive.
+-/
+theorem compareOp_ge_refl (a : Int) :
+    CompareOp.eval .ge a a = true := by
+  simp [CompareOp.eval]
+
+/--
+  lt is transitive: if a < b and b < c, then a < c.
+-/
+theorem compareOp_lt_trans (a b c : Int)
+    (hab : CompareOp.eval .lt a b = true)
+    (hbc : CompareOp.eval .lt b c = true) :
+    CompareOp.eval .lt a c = true := by
+  simp [CompareOp.eval] at *; omega
+
+/--
+  le is transitive: if a ≤ b and b ≤ c, then a ≤ c.
+-/
+theorem compareOp_le_trans (a b c : Int)
+    (hab : CompareOp.eval .le a b = true)
+    (hbc : CompareOp.eval .le b c = true) :
+    CompareOp.eval .le a c = true := by
+  simp [CompareOp.eval] at *; omega
+
+/--
+  If a < b, then a ≤ b (lt implies le).
+-/
+theorem compareOp_lt_implies_le (a b : Int)
+    (h : CompareOp.eval .lt a b = true) :
+    CompareOp.eval .le a b = true := by
+  simp [CompareOp.eval] at *; omega
 
 end TekkenQuery

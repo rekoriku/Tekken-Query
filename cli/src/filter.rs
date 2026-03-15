@@ -3,6 +3,32 @@
 use crate::error::CliError;
 use crate::model::Move;
 
+/// Which frame data field to compare.
+#[derive(Debug, Clone, Copy)]
+pub enum FrameField {
+    /// Block frame value.
+    Block,
+    /// Hit frame value.
+    Hit,
+    /// Counter hit frame value.
+    CounterHit,
+}
+
+/// Comparison operator for frame data.
+#[derive(Debug, Clone, Copy)]
+pub enum CompareOp {
+    /// Less than.
+    Lt,
+    /// Less than or equal.
+    Le,
+    /// Equal.
+    Eq,
+    /// Greater than or equal.
+    Ge,
+    /// Greater than.
+    Gt,
+}
+
 /// A filter that can be applied to a move.
 #[derive(Debug, Clone)]
 pub enum Filter {
@@ -28,8 +54,6 @@ pub enum Filter {
     StartupGe(i64),
     /// Has a specific tag (e.g., "he", "pc", "hom").
     Tag(String),
-    /// Has any of these tags (OR logic).
-    AnyTag(Vec<String>),
     /// Move has at least N active frames.
     ActiveGe(i64),
     /// Move is from a specific stance.
@@ -42,8 +66,40 @@ pub enum Filter {
     NameContains(String),
     /// Notes contain substring.
     NoteContains(String),
+    /// Frame data comparison (block/hit/counter-hit × lt/le/eq/ge/gt).
+    FrameCompare(FrameField, CompareOp, i64),
+    /// Heat move: heat engager/smash/burst OR heat-state move (H. prefix).
+    HeatMove,
     /// Negate a filter.
     Not(Box<Filter>),
+}
+
+/// Parse the leading signed integer from a frame string like "+5", "-10", "+13a (+4)".
+///
+/// Handles optional `+` prefix and stops at first non-digit after sign.
+fn parse_frame_value(s: &str) -> Option<i64> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let stripped = trimmed.strip_prefix('+').unwrap_or(trimmed);
+    stripped
+        .chars()
+        .take_while(|c| *c == '-' || c.is_ascii_digit())
+        .collect::<String>()
+        .parse::<i64>()
+        .ok()
+}
+
+/// Evaluate a comparison operator.
+fn eval_compare(op: CompareOp, actual: i64, threshold: i64) -> bool {
+    match op {
+        CompareOp::Lt => actual < threshold,
+        CompareOp::Le => actual <= threshold,
+        CompareOp::Eq => actual == threshold,
+        CompareOp::Ge => actual >= threshold,
+        CompareOp::Gt => actual > threshold,
+    }
 }
 
 impl Filter {
@@ -61,13 +117,24 @@ impl Filter {
             Self::StartupEq(n) => m.startup.is_some_and(|s| s == *n),
             Self::StartupGe(n) => m.startup.is_some_and(|s| s >= *n),
             Self::Tag(tag) => m.has_tag(tag),
-            Self::AnyTag(tags) => tags.iter().any(|tag| m.has_tag(tag)),
             Self::ActiveGe(n) => m.active_frames.is_some_and(|a| a >= *n),
             Self::Stance(name) => m.stance.eq_ignore_ascii_case(name),
             Self::HasStance => !m.stance.is_empty(),
             Self::CommandContains(q) => m.command.to_lowercase().contains(&q.to_lowercase()),
             Self::NameContains(q) => m.name.to_lowercase().contains(&q.to_lowercase()),
             Self::NoteContains(q) => m.notes.to_lowercase().contains(&q.to_lowercase()),
+            Self::HeatMove => {
+                m.has_tag("he") || m.has_tag("hs") || m.has_tag("hb")
+                    || m.command.starts_with("H.")
+            }
+            Self::FrameCompare(field, op, value) => {
+                let actual = match field {
+                    FrameField::Block => m.block_frame,
+                    FrameField::Hit => parse_frame_value(&m.hit_frame),
+                    FrameField::CounterHit => parse_frame_value(&m.counter_hit_frame),
+                };
+                actual.is_some_and(|a| eval_compare(*op, a, *value))
+            }
             Self::Not(inner) => !inner.matches(m),
         }
     }
@@ -112,7 +179,7 @@ pub fn parse_filter(token: &str) -> Result<Vec<Filter>, CliError> {
         "he" | "heatengager" => Ok(vec![Filter::Tag("he".into())]),
         "hs" | "heatsmash" => Ok(vec![Filter::Tag("hs".into())]),
         "hb" | "heatburst" => Ok(vec![Filter::Tag("hb".into())]),
-        "heat" => Ok(vec![Filter::AnyTag(vec!["he".into(), "hs".into(), "hb".into()])]),
+        "heat" => Ok(vec![Filter::HeatMove]),
         "pc" | "powercrush" => Ok(vec![Filter::Tag("pc".into())]),
         "hom" | "homing" => Ok(vec![Filter::Tag("hom".into())]),
         "trn" | "tornado" => Ok(vec![Filter::Tag("trn".into())]),
@@ -139,6 +206,27 @@ fn parse_parameterized_filter(token: &str) -> Result<Vec<Filter>, CliError> {
         return parse_startup_filter(rest);
     }
 
+    // Hit frame comparison: hit>0, hit<5, hit<=0, hit>=5, hit=0
+    if let Some(rest) = token.strip_prefix("hit") {
+        return parse_frame_compare(rest, FrameField::Hit, token);
+    }
+
+    // Counter-hit frame comparison: ch>0, ch<5, ch<=0, ch>=5, ch=0
+    if let Some(rest) = token.strip_prefix("ch") {
+        return parse_frame_compare(rest, FrameField::CounterHit, token);
+    }
+
+    // Block frame comparison: block>0, block<5
+    if let Some(rest) = token.strip_prefix("block") {
+        return parse_frame_compare(rest, FrameField::Block, token);
+    }
+
+    // Bare comparison operators → block frame (most common use):
+    // <+5, >-10, <=0, >=+3, =0
+    if token.starts_with('<') || token.starts_with('>') || token.starts_with('=') {
+        return parse_frame_compare(token, FrameField::Block, token);
+    }
+
     // Active frames: active3+, active2
     if let Some(rest) = token.strip_prefix("active") {
         let rest = rest.trim_end_matches('+');
@@ -163,6 +251,37 @@ fn parse_parameterized_filter(token: &str) -> Result<Vec<Filter>, CliError> {
     }
 
     Err(CliError::InvalidFilter(format!("unknown filter: {token}")))
+}
+
+/// Parse a frame comparison expression: `<+5`, `>=0`, `<=-10`, `=0`, `>+3`.
+///
+/// Extracts the operator and signed value from the expression.
+fn parse_frame_compare(
+    expr: &str,
+    field: FrameField,
+    original: &str,
+) -> Result<Vec<Filter>, CliError> {
+    let err = || CliError::InvalidFilter(format!("bad frame comparison: {original}"));
+
+    let (op, rest) = if let Some(r) = expr.strip_prefix("<=") {
+        (CompareOp::Le, r)
+    } else if let Some(r) = expr.strip_prefix(">=") {
+        (CompareOp::Ge, r)
+    } else if let Some(r) = expr.strip_prefix('<') {
+        (CompareOp::Lt, r)
+    } else if let Some(r) = expr.strip_prefix('>') {
+        (CompareOp::Gt, r)
+    } else if let Some(r) = expr.strip_prefix('=') {
+        (CompareOp::Eq, r)
+    } else {
+        return Err(err());
+    };
+
+    // Parse signed value: +5, -10, 0
+    let value_str = rest.strip_prefix('+').unwrap_or(rest);
+    let value: i64 = value_str.parse().map_err(|_| err())?;
+
+    Ok(vec![Filter::FrameCompare(field, op, value)])
 }
 
 /// Parse startup frame comparison: `15` → eq, `<15` → lt, `>=15` → ge, etc.

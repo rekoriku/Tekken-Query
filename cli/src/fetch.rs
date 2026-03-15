@@ -8,6 +8,7 @@ use std::path::Path;
 
 use crate::data::{CharacterMeta, Manifest};
 use crate::error::CliError;
+use crate::lean_server::LeanServer;
 
 // ── GitHub API URLs ─────────────────────────────────────────────────
 
@@ -173,13 +174,25 @@ fn write_manifest(data_dir: &Path, manifest: &Manifest) -> Result<(), CliError> 
 
 /// Fetch all characters from GitHub, convert via Lean, and write to disk.
 ///
+/// When a running `LeanServer` is provided, conversion goes through the
+/// persistent server (faster — no per-character process spawn). Otherwise
+/// falls back to spawning the Lean binary for each character.
+///
 /// Returns the updated manifest.
-pub fn fetch_all(data_dir: &Path) -> Result<Manifest, CliError> {
-    let lean_binary = find_lean_binary().ok_or_else(|| {
-        CliError::DataNotFound(
-            "Lean binary not found. Run 'lake build' in the project root first.".into(),
-        )
-    })?;
+pub fn fetch_all(
+    data_dir: &Path,
+    server: Option<&mut LeanServer>,
+) -> Result<Manifest, CliError> {
+    // Lean binary is only needed when no server is provided
+    let lean_binary = if server.is_none() {
+        Some(find_lean_binary().ok_or_else(|| {
+            CliError::DataNotFound(
+                "Lean binary not found. Run 'lake build' in the project root first.".into(),
+            )
+        })?)
+    } else {
+        None
+    };
 
     let raw_dir = data_dir.join("raw");
     let clean_dir = data_dir.join("clean");
@@ -197,8 +210,20 @@ pub fn fetch_all(data_dir: &Path) -> Result<Manifest, CliError> {
     let mut characters = Vec::new();
     let mut failed = 0u32;
 
+    // We can't pass `&mut LeanServer` into a loop that borrows it each iteration
+    // and also moves it, so we hold it as a mutable option and reborrow each time.
+    let mut server = server;
+    let binary_ref = lean_binary.as_deref().unwrap_or("");
+
     for id in &char_ids {
-        match fetch_and_convert(id, &lean_binary, &raw_dir, &clean_dir) {
+        let result = fetch_and_convert(
+            id,
+            binary_ref,
+            &raw_dir,
+            &clean_dir,
+            server.as_deref_mut(),
+        );
+        match result {
             Ok(move_count) => {
                 let display_name = to_display_name(id);
                 eprintln!("  OK   {id} ({move_count} moves)");
@@ -232,11 +257,15 @@ pub fn fetch_all(data_dir: &Path) -> Result<Manifest, CliError> {
 }
 
 /// Fetch a single character's raw CSV and convert via Lean.
+///
+/// If a running `LeanServer` is provided, conversion is routed through it.
+/// Otherwise, falls back to spawning the Lean binary as a subprocess.
 fn fetch_and_convert(
     id: &str,
     lean_binary: &str,
     raw_dir: &Path,
     clean_dir: &Path,
+    server: Option<&mut LeanServer>,
 ) -> Result<usize, CliError> {
     // Fetch raw CSV
     let csv_text = fetch_raw_csv(id)?;
@@ -246,22 +275,30 @@ fn fetch_and_convert(
     std::fs::write(&raw_path, &csv_text)
         .map_err(|e| CliError::IoError(format!("{}: {e}", raw_path.display())))?;
 
-    // Convert via Lean verified pipeline
-    let clean_csv = convert_with_lean(lean_binary, &raw_path)?;
-
-    // Write clean CSV
     let clean_path = clean_dir.join(format!("{id}.csv"));
-    std::fs::write(&clean_path, &clean_csv)
-        .map_err(|e| CliError::IoError(format!("{}: {e}", clean_path.display())))?;
 
-    Ok(count_csv_moves(&clean_csv))
+    // Convert via Lean server if available, otherwise spawn subprocess
+    if let Some(srv) = server {
+        srv.export_character(&raw_path, &clean_path)
+    } else {
+        let clean_csv = convert_with_lean(lean_binary, &raw_path)?;
+        std::fs::write(&clean_path, &clean_csv)
+            .map_err(|e| CliError::IoError(format!("{}: {e}", clean_path.display())))?;
+        Ok(count_csv_moves(&clean_csv))
+    }
 }
 
 /// Check if upstream data has been updated, and fetch if so.
 ///
+/// When a `LeanServer` is provided, raw→clean conversion uses the
+/// persistent server for speed. Otherwise spawns the Lean binary.
+///
 /// Returns `(manifest, was_updated)`. On network failure, falls back to
 /// local data if available.
-pub fn update_if_needed(data_dir: &Path) -> Result<(Manifest, bool), CliError> {
+pub fn update_if_needed(
+    data_dir: &Path,
+    server: Option<&mut LeanServer>,
+) -> Result<(Manifest, bool), CliError> {
     let existing = crate::data::load_manifest(data_dir).ok();
 
     match fetch_latest_sha() {
@@ -285,7 +322,7 @@ pub fn update_if_needed(data_dir: &Path) -> Result<(Manifest, bool), CliError> {
                 &remote_sha
             };
             eprintln!("Update available ({short}), fetching...");
-            let manifest = fetch_all(data_dir)?;
+            let manifest = fetch_all(data_dir, server)?;
             Ok((manifest, true))
         }
         Err(e) => {

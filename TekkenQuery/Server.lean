@@ -6,6 +6,7 @@
   Protocol: line-delimited JSON on stdin/stdout.
   Requests:
     {"id": N, "method": "load",    "params": {"id": "jin", "name": "Jin Kazama", "path": "data/clean/jin.csv"}}
+    {"id": N, "method": "convert", "params": {"raw_path": "data/raw/jin.csv", "clean_path": "data/clean/jin.csv"}}
     {"id": N, "method": "query",   "params": {"character": "jin", "filters": [...]}}
     {"id": N, "method": "compare", "params": {"char1": "jin", "char2": "kazuya", "filters": [...]}}
     {"id": N, "method": "quit"}
@@ -46,6 +47,7 @@ def ServerState.addCharacter (state : ServerState) (id : String) (char : TekkenC
 /-- A parsed server request. -/
 inductive ParsedRequest where
   | load (id : String) (name : String) (csvPath : String)
+  | convertFile (rawPath : String) (cleanPath : String)
   | query (characterId : String) (filters : List Filter)
   | compare (char1Id : String) (char2Id : String) (filters : List Filter)
   | quit
@@ -85,6 +87,11 @@ def parseRequest (line : String) : Except String (Json × ParsedRequest) := do
     let char2 ← params.getObjValAs? String "char2"
     let filters ← parseFiltersFromParams params
     return (json, .compare char1 char2 filters)
+  | "convert" => do
+    let params ← json.getObjVal? "params"
+    let rawPath ← params.getObjValAs? String "raw_path"
+    let cleanPath ← params.getObjValAs? String "clean_path"
+    return (json, .convertFile rawPath cleanPath)
   | "quit" => return (json, .quit)
   | other => .error s!"unknown method: {other}"
 
@@ -99,6 +106,9 @@ inductive RequestResult where
   /-- Need to load a CSV file (IO required by Main.lean). -/
   | loadFile (state : ServerState) (id : String) (name : String)
       (csvPath : String) (reqId : Json)
+  /-- Need to convert a raw CSV to clean CSV (IO required by Main.lean). -/
+  | convertFile (state : ServerState) (rawPath : String) (cleanPath : String)
+      (reqId : Json)
   /-- Server should shut down after sending this response. -/
   | quit (json : Json)
 
@@ -143,6 +153,8 @@ def processRequest (state : ServerState) (line : String) : RequestResult :=
     match req with
     | .load id name path =>
       .loadFile state id name path reqId
+    | .convertFile rawPath cleanPath =>
+      .convertFile state rawPath cleanPath reqId
     | .query charId filters =>
       match state.findCharacter charId with
       | none => .respond state (mkErrorResponse reqId s!"character not loaded: {charId}")
