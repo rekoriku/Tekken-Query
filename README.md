@@ -35,7 +35,6 @@ Grab the latest release for your platform from [Releases](../../releases):
 ```
 tekken-query-linux-x86_64.tar.gz
 tekken-query-macos-arm64.tar.gz
-tekken-query-macos-x86_64.tar.gz
 tekken-query-windows-x86_64.zip
 ```
 
