@@ -1,16 +1,8 @@
-<p align="center">
-  <img src="assets/icon.svg" width="96" alt="Tekken Query">
-</p>
+# Tekken Query
 
-<h1 align="center">Tekken Query</h1>
+Formally verified Tekken 8 frame data query tool.
 
-<p align="center">
-  Formally verified Tekken 8 frame data query tool.
-</p>
-
-<p align="center">
-  All data logic — CSV parsing, frame data parsing, filtering, comparisons — is implemented in <a href="https://lean-lang.org/">Lean 4</a> with mathematical proofs checked by the Lean kernel. The interactive CLI is written in Rust. No <code>sorry</code>, no <code>unsafe</code>, no shortcuts.
-</p>
+All data logic — CSV parsing, frame data parsing, filtering, comparisons — is implemented in [Lean 4](https://lean-lang.org/) with mathematical proofs checked by the Lean kernel. The interactive CLI is written in Rust. No `sorry`, no `unsafe`, no shortcuts.
 
 ## Screenshots
 
