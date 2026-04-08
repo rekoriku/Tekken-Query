@@ -1,3 +1,7 @@
 /.lake
 /cli/target/
+/launcher/target/
 /data/
+
+# KDE/Dolphin folder metadata
+.directory
