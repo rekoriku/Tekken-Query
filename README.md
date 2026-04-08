@@ -1,8 +1,6 @@
 # Tekken Query
 
-Formally verified Tekken 8 frame data query tool.
-
-All data logic — CSV parsing, frame data parsing, filtering, comparisons — is implemented in [Lean 4](https://lean-lang.org/) with mathematical proofs checked by the Lean kernel. The interactive CLI is written in Rust. No `sorry`, no `unsafe`, no shortcuts.
+A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL where you pick a character and query their moves with filters (safe mids, fast homing moves, heat engagers, etc.), plus a few one-shot CLI commands for scripting.
 
 ## Screenshots
 
@@ -39,9 +37,9 @@ tekken-query-windows-x86_64.zip
 ```
 
 Each archive contains:
-- `tekken-query` — **double-click this to launch** (launcher with icon)
+- `tekken-query` — **double-click this to launch**
 - `tekken-cli` — the full CLI with all commands
-- `tekken_query` — the verified Lean core
+- `tekken_query` — the backend binary
 
 Place all files in the same directory.
 
@@ -54,15 +52,11 @@ Place all files in the same directory.
 # Double-click tekken-query, or from a terminal:
 ./tekken-query
 
-# Or use the full CLI directly:
+# Same thing, launches the interactive REPL:
 tekken-cli interactive
-
-# One-shot query
-tekken-cli query jin mid plus homing
-
-# Compare two characters
-tekken-cli compare jin kazuya mid plus
 ```
+
+That's the main way to use it. One-shot CLI commands (`query`, `compare`, `move`, ...) are listed under [CLI Commands](#cli-commands) below — useful for scripting, but day-to-day use is the REPL.
 
 ## Usage
 
@@ -108,16 +102,20 @@ Jin > hellsweep           # character-specific alias
 
 ### CLI Commands
 
+One-shot commands for scripting or quick lookups without entering the REPL. None of these live inside the interactive mode — run them from your shell.
+
 ```bash
-tekken-cli interactive          # interactive REPL (alias: i)
-tekken-cli query <char> <filters...>   # one-shot query
-tekken-cli move <char> <command>       # look up a specific move
-tekken-cli compare <char1> <char2> <filters...>  # side-by-side comparison
+tekken-cli interactive          # launch the REPL (alias: i)
+tekken-cli query <char> <filters...>              # one-shot filter query
+tekken-cli move <char> <command>                  # look up a specific move
+tekken-cli compare <char1> <char2> <filters...>   # side-by-side comparison (CLI only)
 tekken-cli chars                # list all characters
 tekken-cli stats <char>         # character stats summary
 tekken-cli check                # check for upstream data updates
 tekken-cli fetch                # download/update frame data
 ```
+
+`compare` runs the same filter against two characters and prints two tables back to back with a shared column layout, e.g. `tekken-cli compare jin kazuya mid plus` to see both rosters' plus-on-block mids side by side.
 
 ### Filter Reference
 
@@ -198,130 +196,25 @@ Type shorthand in the REPL — it auto-expands:
 
 ## Architecture
 
-Two layers with strict separation of concerns:
+Two layers: Lean 4 handles all data logic (CSV parsing, filtering, frame comparisons) with kernel-checked proofs; Rust handles the CLI, network, and display. The Lean binary runs as a persistent subprocess and communicates over line-delimited JSON.
 
-```
-GitHub (tekkendocs) --> Rust fetches raw CSVs --> Lean server converts to clean CSVs
-                                               --> Lean server evaluates filters
-                                               --> Rust displays results
-```
-
-### Lean 4 — Verified Core
-
-All data logic lives here. The Lean kernel mathematically verifies correctness.
-
-| Module | Purpose |
-|--------|---------|
-| `TekkenQuery/Csv/Split.lean` | Character-by-character CSV parser (multiline, quote-aware) |
-| `TekkenQuery/Csv/Parser.lean` | Delimiter detection, field cleaning, record building |
-| `TekkenQuery/Models.lean` | `TekkenMove`, `TekkenCharacter`, `MoveProperty` (19 typed properties) |
-| `TekkenQuery/Frame.lean` | Startup/block frame parsing with proofs |
-| `TekkenQuery/Filter.lean` | 25+ composable filters with 14 proofs (subset, commutativity, transitivity...) |
-| `TekkenQuery/Export.lean` | Clean CSV export with HTML stripping |
-| `TekkenQuery/Json.lean` | JSON serialization for server protocol |
-| `TekkenQuery/Server.lean` | Query server logic (load, query, compare, convert) |
-| `Main.lean` | IO layer: `--server` mode, `--export` mode |
-
-### Rust — Interactive CLI
-
-Handles everything that isn't data logic: network, display, user input.
-
-| Module | Purpose |
-|--------|---------|
-| `interactive.rs` | REPL loop, fuzzy matching, aliases, notation normalization |
-| `lean_server.rs` | Lean subprocess management (persistent server over stdin/stdout) |
-| `filter.rs` | Filter token parsing, Rust-side eval fallback |
-| `display.rs` | Color-coded terminal output, column alignment |
-| `fetch.rs` | GitHub API, raw CSV downloading |
-| `model.rs` | `Move`, `Character` structs |
-| `aliases.rs` | Custom user-defined move aliases (JSON config) |
-| `completion.rs` | Tab completion (filters, aliases, move commands, stances) |
-
-### Query Server Protocol
-
-The Lean binary runs as a persistent subprocess. Rust communicates via line-delimited JSON on stdin/stdout:
-
-| Method | Params | Response |
-|--------|--------|----------|
-| `load` | `id`, `name`, `path` | `moves_loaded` |
-| `query` | `character`, `filters` | `name`, `total`, `count`, `moves` |
-| `compare` | `char1`, `char2`, `filters` | `char1: {name, moves}`, `char2: ...` |
-| `convert` | `raw_path`, `clean_path` | `moves_exported` |
-| `quit` | -- | -- |
-
-The server protocol is designed to be reusable — a REST API or other frontend could use the same Lean binary.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for module breakdown, server protocol, and proof list.
 
 ## Building from Source
 
-### Requirements
-
-- [elan](https://github.com/leanprover/elan) (Lean 4 toolchain manager)
-- [Rust](https://rustup.rs/) (stable)
-- On NixOS: `nix shell nixpkgs#elan nixpkgs#rustup`
-
-### Build
+Requires [elan](https://github.com/leanprover/elan) and [Rust](https://rustup.rs/). On NixOS: `nix shell nixpkgs#elan nixpkgs#rustup`.
 
 ```bash
-# Build everything
 ./scripts/build.sh
 
 # Or manually:
-lake build                          # Lean core
-cd cli && cargo build --release     # Rust CLI
-```
-
-### Verify
-
-```bash
-# No banned constructs in Lean
-grep -rn 'sorry\|unsafe\|partial\|implemented_by\|native_decide' --include='*.lean' .
-# Should return nothing
-
-# Rust checks
-cd cli
-cargo clippy -- -D warnings         # zero warnings
-cargo test                          # all tests pass
+lake build
+cd cli && cargo build --release
 ```
 
 ## Data Source
 
-Frame data is sourced from [tekkendocs](https://github.com/pbruvoll/tekkendocs) (wavu.wiki). The CLI auto-fetches and converts data on first run. Updates are checked automatically in interactive mode.
-
-Data flow:
-```
-Raw CSVs (messy, semicolon-delimited) --> Lean parser (verified) --> Clean CSVs --> queries
-```
-
-## Strictness Guarantees
-
-### Lean (verified by kernel)
-
-- No `sorry` — every proof is complete
-- No `unsafe` — no unchecked operations
-- No `partial` — all functions terminate on all inputs
-- No `implemented_by` — no escape hatches to unverified code
-- No `native_decide` — no runtime-only evaluation
-- No user-defined `axiom` — no unproven assumptions
-- All functions are pure, all data is immutable
-
-### Rust (enforced by compiler + clippy)
-
-- No `unsafe` — forbidden via `#![forbid(unsafe_code)]`
-- No `unwrap()`/`expect()`/`panic!()` — all errors handled via `Result`/`Option`
-- No lossy `as` casts — `TryFrom`/`From` only
-- Full clippy pedantic with zero warnings
-
-### Proofs
-
-The filter system includes 14+ mathematical proofs:
-
-- `query_subset` — query results are always a subset of the move list
-- `filter_not_not` — double negation is identity
-- `filter_and_comm` / `filter_or_comm` — boolean algebra
-- `compareOp_lt_neg_ge` / `compareOp_gt_neg_le` — operator duality
-- `compareOp_lt_trans` / `compareOp_le_trans` — transitivity
-- `compareOp_lt_implies_le` — ordering implications
-- And more (reflexivity, empty query identity, AND projection)
+Frame data is sourced from [tekkendocs](https://github.com/pbruvoll/tekkendocs) (wavu.wiki). The CLI auto-fetches data on first run and checks for updates in interactive mode.
 
 ## License
 
