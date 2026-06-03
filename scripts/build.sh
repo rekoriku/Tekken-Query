@@ -29,7 +29,7 @@ if [ "$needs_nix" = true ]; then
     exit 1
   fi
   echo "Entering nix shell..."
-  exec nix shell nixpkgs#elan nixpkgs#rustup nixpkgs#shellcheck -c bash "$0" "$@"
+  exec nix shell nixpkgs#elan nixpkgs#cargo nixpkgs#rustc nixpkgs#clippy nixpkgs#shellcheck -c bash "$0" "$@"
 fi
 
 # ── Parse arguments ─────────────────────────────────────────────────
