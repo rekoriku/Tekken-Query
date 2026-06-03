@@ -625,7 +625,9 @@ fn print_query_help() {
     eprintln!("{}", "Filter tokens (AND'd together):".bold());
     eprintln!("  {:<20} hit level", "high, mid, low");
     eprintln!("  {:<20} block frame category", "plus, minus, punish");
-    eprintln!("  {:<20} startup frame comparisons", "i15, i<15, i>=15");
+    eprintln!("  {:<20} startup frames", "i15, i=15, i<15, i>=15");
+    eprintln!("  {:<20} block frames", "<0, <=-10, =0, block>=+3");
+    eprintln!("  {:<20} hit / CH frames", "hit>0, hit=0, ch>=5");
     eprintln!("  {:<20} move tags", "hom, pc, he, hs, heat, trn");
     eprintln!("  {:<20} stance moves", "stance, stance:ZEN");
     eprintln!(

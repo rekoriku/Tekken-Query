@@ -284,7 +284,7 @@ fn parse_frame_compare(
     Ok(vec![Filter::FrameCompare(field, op, value)])
 }
 
-/// Parse startup frame comparison: `15` → eq, `<15` → lt, `>=15` → ge, etc.
+/// Parse startup frame comparison: `15` or `=15` → eq, `<15` → lt, `>=15` → ge, etc.
 fn parse_startup_filter(s: &str) -> Result<Vec<Filter>, CliError> {
     let err = || CliError::InvalidFilter(format!("bad startup filter: i{s}"));
 
@@ -300,6 +300,9 @@ fn parse_startup_filter(s: &str) -> Result<Vec<Filter>, CliError> {
     } else if let Some(rest) = s.strip_prefix('>') {
         let n: i64 = rest.parse().map_err(|_| err())?;
         Ok(vec![Filter::StartupGe(n + 1)])
+    } else if let Some(rest) = s.strip_prefix('=') {
+        let n: i64 = rest.parse().map_err(|_| err())?;
+        Ok(vec![Filter::StartupEq(n)])
     } else {
         let n: i64 = s.parse().map_err(|_| err())?;
         Ok(vec![Filter::StartupEq(n)])

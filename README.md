@@ -86,6 +86,8 @@ Jin > heat                # all heat moves (engager + smash + burst + H. state)
 Jin > hit>0 mid           # mids that are plus on hit
 Jin > ch>=5 low           # lows with counter-hit advantage >= +5
 Jin > <+5                 # moves with block frame < +5
+Jin > block=-10           # moves that are exactly -10 on block
+Jin > i=15                # moves with exactly 15f startup
 Jin > stance:ZEN          # moves from a specific stance
 Jin > cmd:df+2            # search by command notation
 Jin > pc !high            # non-high power crushes
@@ -127,11 +129,11 @@ tekken-cli fetch                # download/update frame data
 | `minus` | Negative but safe (-1 to -9) |
 | `punish` | Punishable (<= -10) |
 | `guardable` | Opponent can still guard on block |
-| `i15`, `i<15`, `i>=15` | Startup frame comparisons |
-| `<+5`, `>-10`, `<=0`, `>=+3` | Block frame comparisons |
-| `block<+5` | Explicit block frame comparison |
-| `hit>0`, `hit>=5` | Hit frame comparison |
-| `ch>0`, `ch>=5` | Counter-hit frame comparison |
+| `i15`, `i=15`, `i<15`, `i<=15`, `i>15`, `i>=15` | Startup frame comparisons |
+| `<+5`, `>-10`, `<=0`, `>=+3`, `=-10` | Block frame comparisons |
+| `block<+5`, `block=-10` | Explicit block frame comparison |
+| `hit>0`, `hit>=5`, `hit=0` | Hit frame comparison |
+| `ch>0`, `ch>=5`, `ch=0` | Counter-hit frame comparison |
 | `he`, `hs`, `hb` | Heat engager / smash / burst |
 | `heat` | All heat moves (engager + smash + burst + heat-state `H.` moves) |
 | `pc` | Power crush |
@@ -147,6 +149,20 @@ tekken-cli fetch                # download/update frame data
 | `name:uppercut` | Move name search |
 | `note:crush` | Notes search |
 | `!<filter>` | Negate any filter |
+
+#### Frame Comparison Syntax
+
+Frame comparisons support `<`, `<=`, `=`, `>=`, and `>`.
+
+| Syntax | Field queried |
+|--------|---------------|
+| `i15`, `i=15`, `i<15`, `i<=15`, `i>15`, `i>=15` | Startup frames |
+| `<0`, `<=-10`, `=0`, `>=+3`, `>+5` | Block frames (bare comparison defaults to block) |
+| `block<0`, `block=-10`, `block>=+3` | Block frames |
+| `hit<0`, `hit=0`, `hit>0`, `hit>=5` | On-hit frames |
+| `ch<0`, `ch=0`, `ch>0`, `ch>=5` | Counter-hit frames |
+
+Signed values may include `+` for positive frames, so `>=3` and `>=+3` are equivalent.
 
 ### Aliases
 
