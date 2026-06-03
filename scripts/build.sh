@@ -22,6 +22,12 @@ needs_nix=false
 if ! command -v lake &>/dev/null || ! command -v cargo &>/dev/null; then
   needs_nix=true
 fi
+if command -v nix &>/dev/null && command -v rustc &>/dev/null; then
+  rust_sysroot="$(rustc --print sysroot 2>/dev/null || true)"
+  if [ -e /etc/NIXOS ] && [[ "$rust_sysroot" == "$HOME/.rustup/"* ]]; then
+    needs_nix=true
+  fi
+fi
 
 if [ "$needs_nix" = true ]; then
   if ! command -v nix &>/dev/null; then
