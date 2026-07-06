@@ -73,6 +73,8 @@ Two-level interface: pick a character, then query their moves.
 Character? > jin          # fuzzy match: jin, kaz, devil, yoshi...
 Character? > df1          # global move lookup across all characters
 Character? > ewgf         # aliases work too
+Character? > all pc       # roster-wide filter query
+Character? > all i<15 hom # any filter expression works
 Character? > list         # show all characters
 Character? > list-all     # roster overview (+OB count, HS startup)
 ```
@@ -109,6 +111,7 @@ One-shot commands for scripting or quick lookups without entering the REPL. None
 ```bash
 tekken-cli interactive          # launch the REPL (alias: i)
 tekken-cli query <char> <filters...>              # one-shot filter query
+tekken-cli all <filters...>                       # roster-wide filter query
 tekken-cli move <char> <command>                  # look up a specific move
 tekken-cli compare <char1> <char2> <filters...>   # side-by-side comparison (CLI only)
 tekken-cli chars                # list all characters
@@ -118,6 +121,62 @@ tekken-cli fetch                # download/update frame data
 ```
 
 `compare` runs the same filter against two characters and prints two tables back to back with a shared column layout, e.g. `tekken-cli compare jin kazuya mid plus` to see both rosters' plus-on-block mids side by side.
+
+#### Roster-wide queries
+
+`all` runs the same filter language across the whole roster. This is the command to use for questions like "show every power crush" or "compare fast homing moves for everyone".
+
+The basic shape is:
+
+```text
+all <filters...> [output modifiers...]
+```
+
+Filters select moves. Output modifiers change how the selected moves are displayed.
+
+```bash
+tekken-cli all pc
+tekken-cli all pc !high
+tekken-cli all 'i<15' hom
+tekken-cli all pc !cmd:2+3 by:i asc
+tekken-cli all pc by:i asc
+tekken-cli all pc by:i desc
+tekken-cli all heat --summary
+tekken-cli all mid --limit 0
+tekken-cli all pc --flat
+```
+
+Default output is grouped by character and capped at 5 rows per character. Sorted output is a flat table with a `Character` column, so you can still see whose move each row belongs to.
+
+Roster output modifiers:
+
+| Modifier | Meaning |
+|----------|---------|
+| `by:i asc` | Sort by startup, fastest to slowest |
+| `by:i desc` | Sort by startup, slowest to fastest |
+| `limit:3` | In grouped output, show up to 3 rows per character |
+| `limit:0` | In grouped output, show all rows |
+| `flat` | Print one global table instead of grouping by character |
+| `summary` | Print character match counts only |
+
+CLI flags are also available for scripting: `--limit 0`, `--flat`, `--summary`, `--sort startup`, `--order desc`.
+
+In interactive mode, use modifier tokens, not shell quotes:
+
+```text
+Character? > all pc !cmd:2+3 by:i asc
+Character? > all mid limit:3
+Character? > all heat summary
+```
+
+Shell quoting is only needed in your terminal when the shell would otherwise interpret a token, for example:
+
+```bash
+tekken-cli all 'i<15' hom
+tekken-cli all pc '!cmd:2+3' by:i asc
+```
+
+`cmd:`, `name:`, and `note:` are substring searches. That means `!cmd:2+3` excludes every command containing `2+3`, not only the exact command `2+3`.
 
 ### Filter Reference
 

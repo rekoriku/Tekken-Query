@@ -314,6 +314,80 @@ pub fn print_global_move_table(results: &[(&str, &Move)], query: &str) {
     }
 }
 
+/// Print roster-wide filter results grouped by character.
+pub fn print_roster_query_grouped<'a>(
+    groups: &[(&'a str, Vec<&'a Move>)],
+    query: &str,
+    per_character_limit: Option<usize>,
+    total_matches: usize,
+) {
+    eprintln!(
+        "{} matches across {} characters for '{query}'",
+        total_matches,
+        groups.len()
+    );
+
+    if groups.is_empty() {
+        return;
+    }
+
+    let shown_refs: Vec<&Move> = groups
+        .iter()
+        .flat_map(|(_, moves)| {
+            let take = per_character_limit.unwrap_or(usize::MAX);
+            moves.iter().take(take).copied()
+        })
+        .collect();
+    let cols = layout_for(&shown_refs);
+
+    for (name, moves) in groups {
+        eprintln!();
+        eprintln!("{} ({})", name.bold(), moves.len());
+        print_header(&cols);
+
+        let take = per_character_limit.unwrap_or(usize::MAX);
+        for m in moves.iter().take(take) {
+            eprintln!("{}", format_move_row(m, &cols));
+        }
+
+        if per_character_limit.is_some_and(|limit| moves.len() > limit) {
+            eprintln!(
+                "  ... {} more. Use --limit 0, or limit:0 in the REPL, to show all rows.",
+                moves.len() - per_character_limit.unwrap_or(0)
+            );
+        }
+    }
+}
+
+/// Print roster-wide filter match counts only.
+pub fn print_roster_query_summary(groups: &[(&str, usize)], query: &str, total_matches: usize) {
+    eprintln!(
+        "{} matches across {} characters for '{query}'",
+        total_matches,
+        groups.len()
+    );
+
+    if groups.is_empty() {
+        return;
+    }
+
+    let char_width = groups
+        .iter()
+        .map(|(name, _)| name.len())
+        .max()
+        .unwrap_or(10)
+        .clamp(10, 20);
+
+    eprintln!(
+        "{}",
+        format!("{} Matches", pad_right("Character", char_width)).bold()
+    );
+    eprintln!("{}", "─".repeat(char_width + 9));
+    for (name, count) in groups {
+        eprintln!("{} {}", pad_right(name, char_width).cyan(), count);
+    }
+}
+
 /// Colorize a startup string based on its leading numeric value.
 ///
 /// Green for fast (<=15), yellow for medium (16-19), red for slow (>=20).

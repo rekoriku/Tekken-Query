@@ -608,6 +608,8 @@ fn print_char_help() {
     eprintln!("{}", "Commands:".bold());
     eprintln!("  <name>     Select a character (fuzzy match: jin, kaz, devil, yoshi...)");
     eprintln!("  <move>     Look up a move across all characters (df1, ewgf, hopkick...)");
+    eprintln!("  all <filters>  Query moves across all characters (all pc, all i<15 hom)");
+    eprintln!("               Options: limit:N, flat, summary, by:i asc|desc");
     eprintln!("  list       Show all characters");
     eprintln!("  list-all   Character overview (+OB, +OH lows, HS startup)");
     eprintln!();
@@ -939,6 +941,33 @@ fn print_aliases(custom_aliases: &CustomAliases) {
     }
 }
 
+/// Handle `all <filters...>` / `roster <filters...>` at character select.
+fn handle_roster_query(
+    server: Option<&mut LeanServer>,
+    data_dir: &Path,
+    manifest: &Manifest,
+    input: &str,
+) -> bool {
+    let Some(rest) = input
+        .strip_prefix("all ")
+        .or_else(|| input.strip_prefix("roster "))
+    else {
+        return false;
+    };
+
+    match crate::roster_query::parse_interactive_options(rest.trim()) {
+        Ok((options, filter_text)) => {
+            if let Err(e) =
+                crate::roster_query::run(server, data_dir, manifest, &filter_text, options)
+            {
+                eprintln!("{e}");
+            }
+        }
+        Err(e) => eprintln!("{e}"),
+    }
+    true
+}
+
 /// Initialize the REPL: start server, check updates, load manifest.
 ///
 /// Returns the server, manifest, and whether data was updated.
@@ -1023,6 +1052,10 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
         }
         if let Some(rest) = input.strip_prefix("unalias ") {
             handle_alias_remove(rest.trim(), &mut custom_aliases, data_dir);
+            continue;
+        }
+
+        if handle_roster_query(server.as_mut(), data_dir, &manifest, &input) {
             continue;
         }
 

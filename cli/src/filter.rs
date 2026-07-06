@@ -157,6 +157,8 @@ impl Filter {
 ///   `note:crush`               — notes contain
 ///   `!<filter>`                — negate
 pub fn parse_filter(token: &str) -> Result<Vec<Filter>, CliError> {
+    let token = strip_outer_quotes(token);
+
     // Handle negation prefix
     if let Some(rest) = token.strip_prefix('!') {
         let inner = parse_filter(rest)?;
@@ -196,6 +198,18 @@ pub fn parse_filter(token: &str) -> Result<Vec<Filter>, CliError> {
         "rbr" | "reversalbreak" => Ok(vec![Filter::Tag("rbr".into())]),
         "chp" | "chipdamage" => Ok(vec![Filter::Tag("chp".into())]),
         _ => parse_parameterized_filter(&lower),
+    }
+}
+
+/// Strip matching outer quotes from a single token.
+fn strip_outer_quotes(token: &str) -> &str {
+    if token.len() >= 2
+        && ((token.starts_with('\'') && token.ends_with('\''))
+            || (token.starts_with('"') && token.ends_with('"')))
+    {
+        &token[1..token.len() - 1]
+    } else {
+        token
     }
 }
 

@@ -8,6 +8,7 @@ mod filter;
 mod interactive;
 mod lean_server;
 mod model;
+mod roster_query;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -79,6 +80,28 @@ enum Command {
         filters: Vec<String>,
     },
 
+    /// Query moves across the whole roster.
+    #[command(name = "all", alias = "roster")]
+    All {
+        /// Maximum rows to show per character in grouped output. Use 0 for all.
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Print one global table instead of grouping by character.
+        #[arg(long)]
+        flat: bool,
+        /// Print character match counts only.
+        #[arg(long)]
+        summary: bool,
+        /// Sort flat output. Supported: character, startup.
+        #[arg(long)]
+        sort: Option<String>,
+        /// Sort direction. Supported: asc, desc.
+        #[arg(long)]
+        order: Option<String>,
+        /// Filter tokens (AND'd together)
+        filters: Vec<String>,
+    },
+
     /// Interactive REPL with auto-update on startup.
     #[command(name = "interactive", alias = "i")]
     Interactive,
@@ -106,6 +129,22 @@ fn run() -> Result<(), CliError> {
             char2,
             filters,
         } => cmd_compare(&cli.data_dir, char1, char2, filters),
+        Command::All {
+            limit,
+            flat,
+            summary,
+            sort,
+            order,
+            filters,
+        } => cmd_all(
+            &cli.data_dir,
+            *limit,
+            *flat,
+            *summary,
+            sort.as_deref(),
+            order.as_deref(),
+            filters,
+        ),
         Command::Interactive => interactive::run_interactive(&cli.data_dir),
         Command::Fetch => cmd_fetch(&cli.data_dir),
     }
@@ -312,6 +351,38 @@ fn cmd_compare(
         eprintln!("{}", display::format_move_row(m, &cols));
     }
     Ok(())
+}
+
+fn cmd_all(
+    data_dir: &Path,
+    limit: Option<usize>,
+    flat: bool,
+    summary: bool,
+    sort: Option<&str>,
+    order: Option<&str>,
+    filter_tokens: &[String],
+) -> Result<(), CliError> {
+    let manifest = data::load_manifest(data_dir)?;
+    let mut server = LeanServer::start(data_dir).ok();
+    let (mut options, filter_str) = roster_query::parse_inline_options(&filter_tokens.join(" "))?;
+
+    if let Some(limit) = limit {
+        options.per_character_limit = if limit == 0 { None } else { Some(limit) };
+    }
+    if flat {
+        options.flat = true;
+    }
+    if summary {
+        options.summary = true;
+    }
+    if let Some(sort) = sort {
+        options.sort = roster_query::RosterSort::parse(sort)?;
+    }
+    if let Some(order) = order {
+        options.direction = roster_query::SortDirection::parse(order)?;
+    }
+
+    roster_query::run(server.as_mut(), data_dir, &manifest, &filter_str, options)
 }
 
 fn cmd_fetch(data_dir: &Path) -> Result<(), CliError> {
