@@ -231,6 +231,13 @@ pub fn fetch_all(
         }
     }
 
+    if failed != 0 {
+        return Err(CliError::DataNotFound(format!(
+            "fetch incomplete: {failed} of {} characters failed; manifest was not updated",
+            char_ids.len()
+        )));
+    }
+
     let manifest = Manifest {
         updated: utc_now(),
         commit_sha: sha,

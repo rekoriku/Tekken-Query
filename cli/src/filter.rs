@@ -247,6 +247,11 @@ fn parse_parameterized_filter(token: &str) -> Result<Vec<Filter>, CliError> {
         let n: i64 = rest
             .parse()
             .map_err(|_| CliError::InvalidFilter(format!("bad active frames: {token}")))?;
+        if n < 0 {
+            return Err(CliError::InvalidFilter(format!(
+                "bad active frames: {token}"
+            )));
+        }
         return Ok(vec![Filter::ActiveGe(n)]);
     }
 
@@ -301,24 +306,31 @@ fn parse_frame_compare(
 /// Parse startup frame comparison: `15` or `=15` → eq, `<15` → lt, `>=15` → ge, etc.
 fn parse_startup_filter(s: &str) -> Result<Vec<Filter>, CliError> {
     let err = || CliError::InvalidFilter(format!("bad startup filter: i{s}"));
+    let parse_frames = |value: &str| -> Result<i64, CliError> {
+        let frames: i64 = value.parse().map_err(|_| err())?;
+        if frames < 0 {
+            return Err(err());
+        }
+        Ok(frames)
+    };
 
     if let Some(rest) = s.strip_prefix("<=") {
-        let n: i64 = rest.parse().map_err(|_| err())?;
+        let n = parse_frames(rest)?;
         Ok(vec![Filter::StartupLe(n)])
     } else if let Some(rest) = s.strip_prefix(">=") {
-        let n: i64 = rest.parse().map_err(|_| err())?;
+        let n = parse_frames(rest)?;
         Ok(vec![Filter::StartupGe(n)])
     } else if let Some(rest) = s.strip_prefix('<') {
-        let n: i64 = rest.parse().map_err(|_| err())?;
+        let n = parse_frames(rest)?;
         Ok(vec![Filter::StartupLt(n)])
     } else if let Some(rest) = s.strip_prefix('>') {
-        let n: i64 = rest.parse().map_err(|_| err())?;
+        let n = parse_frames(rest)?;
         Ok(vec![Filter::StartupGe(n + 1)])
     } else if let Some(rest) = s.strip_prefix('=') {
-        let n: i64 = rest.parse().map_err(|_| err())?;
+        let n = parse_frames(rest)?;
         Ok(vec![Filter::StartupEq(n)])
     } else {
-        let n: i64 = s.parse().map_err(|_| err())?;
+        let n = parse_frames(s)?;
         Ok(vec![Filter::StartupEq(n)])
     }
 }
@@ -335,4 +347,22 @@ pub fn parse_filters(input: &str) -> Result<Vec<Filter>, CliError> {
 /// Apply all filters to a move (AND logic).
 pub fn matches_all(m: &Move, filters: &[Filter]) -> bool {
     filters.iter().all(|f| f.matches(m))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_filters;
+
+    #[test]
+    fn rejects_negative_startup_frames() {
+        assert!(parse_filters("i=-1").is_err());
+        assert!(parse_filters("i<-1").is_err());
+        assert!(parse_filters("active-1").is_err());
+    }
+
+    #[test]
+    fn accepts_signed_block_frames() {
+        assert!(parse_filters("block>=-10").is_ok());
+        assert!(parse_filters(">=+3").is_ok());
+    }
 }

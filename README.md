@@ -271,7 +271,9 @@ Type shorthand in the REPL — it auto-expands:
 
 ## Architecture
 
-Two layers: Lean 4 handles all data logic (CSV parsing, filtering, frame comparisons) with kernel-checked proofs; Rust handles the CLI, network, and display. The Lean binary runs as a persistent subprocess and communicates over line-delimited JSON.
+Two layers: Lean 4 handles CSV conversion and authoritative query semantics with kernel-checked proofs; Rust handles the CLI, network, and display. The Lean binary runs as a persistent subprocess and communicates over line-delimited JSON. Responses are schema-checked and correlated by request ID before the CLI uses them.
+
+When the Lean binary is unavailable, queries can use a compatibility evaluator in Rust. If the Lean server starts but reports a load, protocol, or query error, that error is shown instead of silently switching evaluators. Data refreshes update the roster manifest only after every character succeeds, preventing a partial download from being marked current.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module breakdown, server protocol, and proof list.
 
@@ -285,6 +287,14 @@ Requires [elan](https://github.com/leanprover/elan) and [Rust](https://rustup.rs
 # Or manually:
 lake build
 cd cli && cargo build --release
+```
+
+Run the verification suite with:
+
+```bash
+cargo test --manifest-path cli/Cargo.toml
+cargo clippy --manifest-path cli/Cargo.toml --all-targets -- -D warnings
+lake build
 ```
 
 ## Data Source

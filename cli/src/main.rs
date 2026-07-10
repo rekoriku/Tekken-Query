@@ -106,7 +106,7 @@ enum Command {
     #[command(name = "interactive", alias = "i")]
     Interactive,
 
-    /// Fetch/update data from GitHub (no Lean dependency).
+    /// Fetch/update data from GitHub and convert it through the Lean backend.
     Fetch,
 }
 
@@ -196,12 +196,14 @@ fn cmd_query(
     let filter_str = filter_tokens.join(" ");
     let filters = parse_filters(&filter_str)?;
 
-    // Try Lean server for verified evaluation
-    if let Ok(mut server) = LeanServer::start(data_dir) {
-        let csv_path = data_dir.join("clean").join(format!("{}.csv", char.id));
-        if server.load_character(&char.id, &char.name, &csv_path).is_ok()
-            && let Ok(qr) = server.query(&char.id, &filters)
-        {
+    // Use the verified evaluator when available. If it starts successfully,
+    // protocol and query failures are surfaced rather than silently changing
+    // evaluator semantics.
+    match LeanServer::start(data_dir) {
+        Ok(mut server) => {
+            let csv_path = data_dir.join("clean").join(format!("{}.csv", char.id));
+            server.load_character(&char.id, &char.name, &csv_path)?;
+            let qr = server.query(&char.id, &filters)?;
             eprintln!(
                 "{} — {} matches (out of {})",
                 qr.name,
@@ -217,7 +219,8 @@ fn cmd_query(
             server.quit();
             return Ok(());
         }
-        server.quit();
+        Err(CliError::DataNotFound(_)) => {}
+        Err(e) => return Err(e),
     }
 
     // Fallback: Rust-side evaluation
@@ -292,15 +295,13 @@ fn cmd_compare(
     let filter_str = filter_tokens.join(" ");
     let filters = parse_filters(&filter_str)?;
 
-    // Try Lean server for verified evaluation
-    if let Ok(mut server) = LeanServer::start(data_dir) {
-        let csv1 = data_dir.join("clean").join(format!("{}.csv", char1.id));
-        let csv2 = data_dir.join("clean").join(format!("{}.csv", char2.id));
-        let load1 = server.load_character(&char1.id, &char1.name, &csv1).is_ok();
-        let load2 = server.load_character(&char2.id, &char2.name, &csv2).is_ok();
-        if load1 && load2
-            && let Ok(cr) = server.compare(&char1.id, &char2.id, &filters)
-        {
+    match LeanServer::start(data_dir) {
+        Ok(mut server) => {
+            let csv1 = data_dir.join("clean").join(format!("{}.csv", char1.id));
+            let csv2 = data_dir.join("clean").join(format!("{}.csv", char2.id));
+            server.load_character(&char1.id, &char1.name, &csv1)?;
+            server.load_character(&char2.id, &char2.name, &csv2)?;
+            let cr = server.compare(&char1.id, &char2.id, &filters)?;
             let refs1: Vec<&Move> = cr.char1_moves.iter().collect();
             let refs2: Vec<&Move> = cr.char2_moves.iter().collect();
             let all: Vec<&Move> = refs1.iter().chain(refs2.iter()).copied().collect();
@@ -320,7 +321,8 @@ fn cmd_compare(
             server.quit();
             return Ok(());
         }
-        server.quit();
+        Err(CliError::DataNotFound(_)) => {}
+        Err(e) => return Err(e),
     }
 
     // Fallback: Rust-side evaluation

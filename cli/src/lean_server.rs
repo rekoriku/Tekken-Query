@@ -54,7 +54,7 @@ impl LeanServer {
             .arg("--server")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::inherit())
             .spawn()
             .map_err(|e| CliError::IoError(format!("failed to start lean server: {e}")))?;
 
@@ -163,13 +163,13 @@ impl LeanServer {
             char1_name: c1
                 .get("name")
                 .and_then(Value::as_str)
-                .unwrap_or("")
+                .ok_or_else(|| CliError::ParseError("missing char1 name".into()))?
                 .to_string(),
             char1_moves: parse_moves_array(c1.get("moves"))?,
             char2_name: c2
                 .get("name")
                 .and_then(Value::as_str)
-                .unwrap_or("")
+                .ok_or_else(|| CliError::ParseError("missing char2 name".into()))?
                 .to_string(),
             char2_moves: parse_moves_array(c2.get("moves"))?,
         })
@@ -227,6 +227,10 @@ impl LeanServer {
 
     /// Send a JSON request and read the response line.
     fn send_request(&mut self, request: &Value) -> Result<Value, CliError> {
+        let request_id = request
+            .get("id")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| CliError::ParseError("request is missing a numeric id".into()))?;
         let line = serde_json::to_string(request)
             .map_err(|e| CliError::ParseError(format!("serialize request: {e}")))?;
 
@@ -249,8 +253,18 @@ impl LeanServer {
             return Err(CliError::IoError("lean server closed unexpectedly".into()));
         }
 
-        serde_json::from_str(&response_line)
-            .map_err(|e| CliError::ParseError(format!("parse response: {e}")))
+        let response: Value = serde_json::from_str(&response_line)
+            .map_err(|e| CliError::ParseError(format!("parse response: {e}")))?;
+        let response_id = response
+            .get("id")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| CliError::ParseError("response is missing a numeric id".into()))?;
+        if response_id != request_id {
+            return Err(CliError::ParseError(format!(
+                "response id {response_id} does not match request id {request_id}"
+            )));
+        }
+        Ok(response)
     }
 
     /// Generate the next request ID.
@@ -388,9 +402,15 @@ fn get_result(response: &Value) -> Result<&Value, CliError> {
         return Err(CliError::ParseError(format!("lean server: {msg}")));
     }
 
-    response
-        .get("result")
-        .ok_or_else(|| CliError::ParseError("missing result in response".into()))
+    if status != "ok" {
+        return Err(CliError::ParseError(format!(
+            "unknown lean server response status: {status}"
+        )));
+    }
+
+    response.get("result").ok_or_else(|| {
+        CliError::ParseError("missing result in response".into())
+    })
 }
 
 /// Parse a query result from the JSON response.
@@ -398,23 +418,25 @@ fn parse_query_result(result: &Value) -> Result<QueryResult, CliError> {
     let name = result
         .get("name")
         .and_then(Value::as_str)
-        .unwrap_or("")
+        .ok_or_else(|| CliError::ParseError("missing query result name".into()))?
         .to_string();
     let total = result
         .get("total")
         .and_then(Value::as_u64)
-        .unwrap_or(0);
+        .ok_or_else(|| CliError::ParseError("missing query result total".into()))?;
     let count = result
         .get("count")
         .and_then(Value::as_u64)
-        .unwrap_or(0);
+        .ok_or_else(|| CliError::ParseError("missing query result count".into()))?;
 
     let moves = parse_moves_array(result.get("moves"))?;
 
     Ok(QueryResult {
         name,
-        total: usize::try_from(total).unwrap_or(0),
-        count: usize::try_from(count).unwrap_or(0),
+        total: usize::try_from(total)
+            .map_err(|_| CliError::ParseError("query result total too large".into()))?,
+        count: usize::try_from(count)
+            .map_err(|_| CliError::ParseError("query result count too large".into()))?,
         moves,
     })
 }
@@ -422,7 +444,9 @@ fn parse_query_result(result: &Value) -> Result<QueryResult, CliError> {
 /// Parse a JSON array of moves into Vec<Move>.
 fn parse_moves_array(moves_val: Option<&Value>) -> Result<Vec<Move>, CliError> {
     let Some(Value::Array(arr)) = moves_val else {
-        return Ok(Vec::new());
+        return Err(CliError::ParseError(
+            "missing or invalid moves array in response".into(),
+        ));
     };
 
     let mut moves = Vec::with_capacity(arr.len());
@@ -483,3 +507,27 @@ pub(crate) fn find_lean_binary(data_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{get_result, parse_moves_array, parse_query_result};
+
+    #[test]
+    fn rejects_unknown_response_status() {
+        let response = json!({"id": 1, "status": "maybe", "result": {}});
+        assert!(get_result(&response).is_err());
+    }
+
+    #[test]
+    fn rejects_missing_moves_array() {
+        assert!(parse_moves_array(None).is_err());
+        assert!(parse_moves_array(Some(&json!({}))).is_err());
+    }
+
+    #[test]
+    fn rejects_incomplete_query_result() {
+        let result = json!({"name": "Jin", "total": 10, "moves": []});
+        assert!(parse_query_result(&result).is_err());
+    }
+}

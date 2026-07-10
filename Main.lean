@@ -3,6 +3,13 @@ import TekkenQuery
 open TekkenQuery
 open Lean
 
+/-- Build moves using the parser that matches the detected CSV schema. -/
+def movesFromParseResult (result : Csv.ParseResult) : List TekkenMove :=
+  if result.headers.head? == some "command" then
+    result.records.map TekkenMove.fromCleanRecord
+  else
+    result.records.map TekkenMove.fromRecord
+
 /--
   Load a character from a CSV file.
   Auto-detects whether the file is a clean (exported) or raw CSV based on the
@@ -17,11 +24,7 @@ def loadCharacterFromCsv (id name path : String) : IO (Except String TekkenChara
     | .error .singleColumn => return .error "CSV has single column (wrong delimiter?)"
     | .ok result =>
       -- Detect format: clean CSVs start with "command", raw with "Command"
-      let isClean := result.headers.head? == some "command"
-      let moves := if isClean then
-        result.records.map TekkenMove.fromCleanRecord
-      else
-        result.records.map TekkenMove.fromRecord
+      let moves := movesFromParseResult result
       return .ok { id := id, name := name, moves := moves }
   catch _ =>
     return .error s!"failed to read file: {path}"
@@ -56,8 +59,8 @@ def convertFileIO (rawPath cleanPath : String) : IO (Except String Nat) := do
       -- Count moves (lines minus header)
       let lineCount := (cleanContent.splitOn "\n").filter (fun l => !l.isEmpty) |>.length
       return .ok (lineCount - 1)
-  catch _ =>
-    return .error s!"failed to read file: {rawPath}"
+  catch e =>
+    return .error s!"failed to convert {rawPath} to {cleanPath}: {e}"
 
 /--
   Send a JSON response on stdout (one line, then flush).
@@ -144,7 +147,7 @@ def main (args : List String) : IO Unit := do
     | .error .noHeader     => IO.eprintln "Error: no header row"
     | .error .singleColumn => IO.eprintln "Error: single column (wrong delimiter?)"
     | .ok result =>
-      let moves := result.records.map TekkenMove.fromRecord
+      let moves := movesFromParseResult result
       let char : TekkenCharacter := { id := "test", name := "Test", moves := moves }
 
       if exportMode then

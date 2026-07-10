@@ -745,9 +745,7 @@ fn run_query(
                 }
                 return Ok(());
             }
-            Err(e) => {
-                eprintln!("lean server error: {e} (using local fallback)");
-            }
+            Err(e) => return Err(e),
         }
     }
 
@@ -1098,8 +1096,10 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
         };
 
         // Also load on Lean server for verified queries
-        if let Some(ref mut srv) = server {
-            server_load_character(srv, data_dir, meta);
+        if let Some(ref mut srv) = server
+            && !server_load_character(srv, data_dir, meta)
+        {
+            server = None;
         }
 
         // Enter character query loop

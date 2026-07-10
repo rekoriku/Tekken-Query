@@ -191,12 +191,12 @@ fn query_with_rust(
     data_dir: &Path,
     manifest: &Manifest,
     filters: &[crate::filter::Filter],
-) -> Vec<RosterGroup> {
+) -> Result<Vec<RosterGroup>, CliError> {
     let characters: Vec<Character> = manifest
         .characters
         .iter()
-        .filter_map(|meta| data::load_character(data_dir, &meta.id, &meta.name).ok())
-        .collect();
+        .map(|meta| data::load_character(data_dir, &meta.id, &meta.name))
+        .collect::<Result<_, _>>()?;
 
     let mut groups = Vec::new();
 
@@ -215,7 +215,7 @@ fn query_with_rust(
         }
     }
 
-    groups
+    Ok(groups)
 }
 
 fn print_results(groups: &[RosterGroup], filter_text: &str, options: RosterQueryOptions) {
@@ -271,9 +271,8 @@ pub fn run(
     }
 
     let groups = match server {
-        Some(server) => query_with_lean(server, data_dir, manifest, &filters)
-            .unwrap_or_else(|_| query_with_rust(data_dir, manifest, &filters)),
-        None => query_with_rust(data_dir, manifest, &filters),
+        Some(server) => query_with_lean(server, data_dir, manifest, &filters)?,
+        None => query_with_rust(data_dir, manifest, &filters)?,
     };
 
     print_results(&groups, filter_text, options);
