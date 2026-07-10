@@ -728,25 +728,21 @@ fn run_query(
 
     // Try Lean server first (verified evaluation)
     if let Some(srv) = server {
-        match srv.query(&character.id, &filters) {
-            Ok(qr) => {
-                eprintln!(
-                    "{} matches (out of {})",
-                    qr.count,
-                    qr.total,
-                );
-                if !qr.moves.is_empty() {
-                    let refs: Vec<&Move> = qr.moves.iter().collect();
-                    let cols = display::layout_for(&refs);
-                    display::print_header(&cols);
-                    for m in &refs {
-                        eprintln!("{}", display::format_move_row(m, &cols));
-                    }
-                }
-                return Ok(());
+        let qr = srv.query(&character.id, &filters)?;
+        eprintln!(
+            "{} matches (out of {})",
+            qr.count,
+            qr.total,
+        );
+        if !qr.moves.is_empty() {
+            let refs: Vec<&Move> = qr.moves.iter().collect();
+            let cols = display::layout_for(&refs);
+            display::print_header(&cols);
+            for m in &refs {
+                eprintln!("{}", display::format_move_row(m, &cols));
             }
-            Err(e) => return Err(e),
         }
+        return Ok(());
     }
 
     // Fallback: Rust-side evaluation (unverified)
