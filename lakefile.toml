@@ -1,5 +1,5 @@
 name = "tekken_query"
-version = "0.1.2"
+version = "0.1.3"
 defaultTargets = ["tekken_query"]
 
 [[lean_lib]]
