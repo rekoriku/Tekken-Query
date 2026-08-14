@@ -1,7 +1,6 @@
-/// Filter engine for querying moves.
-/// Parses human-readable filter strings into composable predicates.
+/// Filter parser for querying moves through the Lean backend.
+/// Parses human-readable filter strings into values serialized by `LeanServer`.
 use crate::error::CliError;
-use crate::model::Move;
 
 /// Which frame data field to compare.
 #[derive(Debug, Clone, Copy)]
@@ -72,72 +71,6 @@ pub enum Filter {
     HeatMove,
     /// Negate a filter.
     Not(Box<Filter>),
-}
-
-/// Parse the leading signed integer from a frame string like "+5", "-10", "+13a (+4)".
-///
-/// Handles optional `+` prefix and stops at first non-digit after sign.
-fn parse_frame_value(s: &str) -> Option<i64> {
-    let trimmed = s.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let stripped = trimmed.strip_prefix('+').unwrap_or(trimmed);
-    stripped
-        .chars()
-        .take_while(|c| *c == '-' || c.is_ascii_digit())
-        .collect::<String>()
-        .parse::<i64>()
-        .ok()
-}
-
-/// Evaluate a comparison operator.
-fn eval_compare(op: CompareOp, actual: i64, threshold: i64) -> bool {
-    match op {
-        CompareOp::Lt => actual < threshold,
-        CompareOp::Le => actual <= threshold,
-        CompareOp::Eq => actual == threshold,
-        CompareOp::Ge => actual >= threshold,
-        CompareOp::Gt => actual > threshold,
-    }
-}
-
-impl Filter {
-    /// Evaluate this filter against a move.
-    pub fn matches(&self, m: &Move) -> bool {
-        match self {
-            Self::HitLevel(level) => m.hit_level.to_lowercase().starts_with(&level.to_lowercase()),
-            Self::Throw => m.hit_level.to_lowercase().contains('t'),
-            Self::Plus => m.is_plus(),
-            Self::Negative => m.block_frame.is_some_and(|v| (-9..0).contains(&v)),
-            Self::Punishable => m.is_punishable(),
-            Self::Guardable => m.is_guardable(),
-            Self::StartupLt(n) => m.startup.is_some_and(|s| s < *n),
-            Self::StartupLe(n) => m.startup.is_some_and(|s| s <= *n),
-            Self::StartupEq(n) => m.startup.is_some_and(|s| s == *n),
-            Self::StartupGe(n) => m.startup.is_some_and(|s| s >= *n),
-            Self::Tag(tag) => m.has_tag(tag),
-            Self::ActiveGe(n) => m.active_frames.is_some_and(|a| a >= *n),
-            Self::Stance(name) => m.stance.eq_ignore_ascii_case(name),
-            Self::HasStance => !m.stance.is_empty(),
-            Self::CommandContains(q) => m.command.to_lowercase().contains(&q.to_lowercase()),
-            Self::NameContains(q) => m.name.to_lowercase().contains(&q.to_lowercase()),
-            Self::NoteContains(q) => m.notes.to_lowercase().contains(&q.to_lowercase()),
-            Self::HeatMove => {
-                m.has_tag("he") || m.has_tag("hs") || m.has_tag("hb")
-                    || m.command.starts_with("H.")
-            }
-            Self::FrameCompare(field, op, value) => {
-                let actual = match field {
-                    FrameField::Block => m.block_frame,
-                    FrameField::Hit => parse_frame_value(&m.hit_frame),
-                    FrameField::CounterHit => parse_frame_value(&m.counter_hit_frame),
-                };
-                actual.is_some_and(|a| eval_compare(*op, a, *value))
-            }
-            Self::Not(inner) => !inner.matches(m),
-        }
-    }
 }
 
 /// Parse a single filter token from user input.
@@ -342,11 +275,6 @@ pub fn parse_filters(input: &str) -> Result<Vec<Filter>, CliError> {
         filters.extend(parse_filter(token)?);
     }
     Ok(filters)
-}
-
-/// Apply all filters to a move (AND logic).
-pub fn matches_all(m: &Move, filters: &[Filter]) -> bool {
-    filters.iter().all(|f| f.matches(m))
 }
 
 #[cfg(test)]

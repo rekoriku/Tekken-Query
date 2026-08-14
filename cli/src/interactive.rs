@@ -4,9 +4,8 @@
 /// On startup, checks for upstream updates and fetches if needed.
 /// Uses rustyline for tab completion and command history.
 ///
-/// When the Lean binary is available, filter evaluation is routed
-/// through the verified Lean query server. Falls back to Rust-side
-/// evaluation if unavailable.
+/// Filter evaluation is routed exclusively through the verified Lean
+/// query server.
 use std::path::Path;
 
 use colored::Colorize;
@@ -18,7 +17,7 @@ use crate::completion::ReplHelper;
 use crate::data::Manifest;
 use crate::display;
 use crate::error::CliError;
-use crate::filter::{matches_all, parse_filters};
+use crate::filter::parse_filters;
 use crate::lean_server::LeanServer;
 use crate::model::{Character, Move};
 
@@ -712,12 +711,9 @@ fn read_line(
     }
 }
 
-/// Execute a filter query using the Lean server if available, falling back to Rust.
-///
-/// Returns owned moves from the server or references to local moves.
-/// Either way, displays results using the same layout/format pipeline.
+/// Execute a filter query using the verified Lean server.
 fn run_query(
-    server: Option<&mut LeanServer>,
+    server: &mut LeanServer,
     character: &Character,
     input: &str,
 ) -> Result<(), CliError> {
@@ -726,42 +722,13 @@ fn run_query(
         return Ok(());
     }
 
-    // Try Lean server first (verified evaluation)
-    if let Some(srv) = server {
-        let qr = srv.query(&character.id, &filters)?;
-        eprintln!(
-            "{} matches (out of {})",
-            qr.count,
-            qr.total,
-        );
-        if !qr.moves.is_empty() {
-            let refs: Vec<&Move> = qr.moves.iter().collect();
-            let cols = display::layout_for(&refs);
-            display::print_header(&cols);
-            for m in &refs {
-                eprintln!("{}", display::format_move_row(m, &cols));
-            }
-        }
-        return Ok(());
-    }
-
-    // Fallback: Rust-side evaluation (unverified)
-    let results: Vec<&Move> = character
-        .moves
-        .iter()
-        .filter(|m| matches_all(m, &filters))
-        .collect();
-
-    eprintln!(
-        "{} matches (out of {})",
-        results.len(),
-        character.moves.len()
-    );
-
-    if !results.is_empty() {
-        let cols = display::layout_for(&results);
+    let qr = server.query(&character.id, &filters)?;
+    eprintln!("{} matches (out of {})", qr.count, qr.total);
+    if !qr.moves.is_empty() {
+        let refs: Vec<&Move> = qr.moves.iter().collect();
+        let cols = display::layout_for(&refs);
         display::print_header(&cols);
-        for m in &results {
+        for m in &refs {
             eprintln!("{}", display::format_move_row(m, &cols));
         }
     }
@@ -772,7 +739,7 @@ fn run_query(
 fn character_loop(
     rl: &mut Editor<ReplHelper, rustyline::history::DefaultHistory>,
     character: &Character,
-    server: &mut Option<LeanServer>,
+    server: &mut LeanServer,
     custom_aliases: &mut CustomAliases,
     data_dir: &Path,
 ) -> Result<LoopAction, CliError> {
@@ -832,7 +799,7 @@ fn character_loop(
         match parse_filters(&input) {
             Ok(filters) if !filters.is_empty() => {
                 drop(filters); // parsed only to check validity
-                if let Err(e) = run_query(server.as_mut(), character, &input) {
+                if let Err(e) = run_query(server, character, &input) {
                     eprintln!("{e}");
                 }
             }
@@ -844,38 +811,16 @@ fn character_loop(
     }
 }
 
-/// Try to start the Lean query server.
-///
-/// Returns `None` if the binary is not found — the REPL will fall back
-/// to Rust-side filter evaluation.
-fn try_start_server(data_dir: &Path) -> Option<LeanServer> {
-    if let Ok(server) = LeanServer::start(data_dir) {
-        eprintln!("Lean query server started (verified filter evaluation)");
-        Some(server)
-    } else {
-        eprintln!("Lean binary not found — using local filter evaluation");
-        eprintln!("  (run 'lake build' in the project root for verified queries)");
-        None
-    }
-}
-
-/// Load a character on the Lean server, returning success/failure.
+/// Load a character on the verified Lean server.
 fn server_load_character(
     server: &mut LeanServer,
     data_dir: &Path,
     meta: &crate::data::CharacterMeta,
-) -> bool {
+) -> Result<(), CliError> {
     let csv_path = data_dir.join("clean").join(format!("{}.csv", meta.id));
-    match server.load_character(&meta.id, &meta.name, &csv_path) {
-        Ok(n) => {
-            eprintln!("  (server: {n} moves loaded)");
-            true
-        }
-        Err(e) => {
-            eprintln!("  server load failed: {e} (using local fallback)");
-            false
-        }
-    }
+    let moves_loaded = server.load_character(&meta.id, &meta.name, &csv_path)?;
+    eprintln!("  (server: {moves_loaded} moves loaded)");
+    Ok(())
 }
 
 // ── Alias management ─────────────────────────────────────────────────
@@ -937,7 +882,7 @@ fn print_aliases(custom_aliases: &CustomAliases) {
 
 /// Handle `all <filters...>` / `roster <filters...>` at character select.
 fn handle_roster_query(
-    server: Option<&mut LeanServer>,
+    server: &mut LeanServer,
     data_dir: &Path,
     manifest: &Manifest,
     input: &str,
@@ -965,19 +910,17 @@ fn handle_roster_query(
 /// Initialize the REPL: start server, check updates, load manifest.
 ///
 /// Returns the server, manifest, and whether data was updated.
-fn init_repl(
-    data_dir: &Path,
-) -> Result<(Option<LeanServer>, Manifest, bool), CliError> {
+fn init_repl(data_dir: &Path) -> Result<(LeanServer, Manifest, bool), CliError> {
     eprintln!("{}", "Tekken 8 Frame Data Query".bold());
     eprintln!();
 
     // Start the Lean query server BEFORE update check so it can handle
     // raw → clean conversion during fetch (faster than spawning per-character)
-    let mut server = try_start_server(data_dir);
+    let mut server = LeanServer::start(data_dir)?;
+    eprintln!("Lean query server started (verified filter evaluation)");
 
     // Check for updates and load manifest (uses server for conversion if available)
-    let (manifest, updated) =
-        crate::fetch::update_if_needed(data_dir, server.as_mut())?;
+    let (manifest, updated) = crate::fetch::update_if_needed(data_dir, Some(&mut server))?;
 
     if updated {
         eprintln!();
@@ -1049,7 +992,7 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
             continue;
         }
 
-        if handle_roster_query(server.as_mut(), data_dir, &manifest, &input) {
+        if handle_roster_query(&mut server, data_dir, &manifest, &input) {
             continue;
         }
 
@@ -1092,10 +1035,9 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
         };
 
         // Also load on Lean server for verified queries
-        if let Some(ref mut srv) = server
-            && !server_load_character(srv, data_dir, meta)
-        {
-            server = None;
+        if let Err(e) = server_load_character(&mut server, data_dir, meta) {
+            eprintln!("Failed to load {} in Lean backend: {e}", meta.id);
+            continue;
         }
 
         // Enter character query loop
@@ -1116,9 +1058,7 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
     }
 
     // Shut down Lean server gracefully
-    if let Some(srv) = server {
-        srv.quit();
-    }
+    server.quit();
 
     // Save history (ignore errors — non-critical)
     let _ = rl.save_history(&history_path);

@@ -511,7 +511,31 @@ pub(crate) fn find_lean_binary(data_dir: &Path) -> Option<PathBuf> {
 mod tests {
     use serde_json::json;
 
-    use super::{get_result, parse_moves_array, parse_query_result};
+    use crate::filter::{CompareOp, Filter, FrameField};
+
+    use super::{filter_to_json, get_result, parse_moves_array, parse_query_result};
+
+    #[test]
+    fn serializes_negated_frame_filter() {
+        let filter = Filter::Not(Box::new(Filter::FrameCompare(
+            FrameField::Hit,
+            CompareOp::Ge,
+            5,
+        )));
+
+        assert_eq!(
+            filter_to_json(&filter),
+            json!({
+                "filter": "not",
+                "inner": {
+                    "filter": "frameCompare",
+                    "field": "hit",
+                    "op": "ge",
+                    "value": 5
+                }
+            })
+        );
+    }
 
     #[test]
     fn rejects_unknown_response_status() {

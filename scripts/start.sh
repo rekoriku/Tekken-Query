@@ -46,7 +46,8 @@ if [ ! -f "$LEAN_BIN" ]; then
     echo ""
   else
     echo "Note: Lean binary not found (lake not available)."
-    echo "  Queries will use unverified Rust-side evaluation."
+    echo "  Filter queries require the verified Lean backend."
+    echo "  Run ./scripts/build.sh before querying."
     echo ""
   fi
 fi

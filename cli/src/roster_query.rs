@@ -4,12 +4,12 @@
 /// character queries, so math-style filters behave consistently everywhere.
 use std::path::Path;
 
-use crate::data::{self, Manifest};
+use crate::data::Manifest;
 use crate::display;
 use crate::error::CliError;
-use crate::filter::{matches_all, parse_filters};
+use crate::filter::parse_filters;
 use crate::lean_server::LeanServer;
-use crate::model::{Character, Move};
+use crate::model::Move;
 
 struct RosterGroup {
     name: String,
@@ -187,37 +187,6 @@ fn query_with_lean(
     Ok(groups)
 }
 
-fn query_with_rust(
-    data_dir: &Path,
-    manifest: &Manifest,
-    filters: &[crate::filter::Filter],
-) -> Result<Vec<RosterGroup>, CliError> {
-    let characters: Vec<Character> = manifest
-        .characters
-        .iter()
-        .map(|meta| data::load_character(data_dir, &meta.id, &meta.name))
-        .collect::<Result<_, _>>()?;
-
-    let mut groups = Vec::new();
-
-    for character in characters {
-        let moves: Vec<Move> = character
-            .moves
-            .into_iter()
-            .filter(|m| matches_all(m, filters))
-            .collect();
-
-        if !moves.is_empty() {
-            groups.push(RosterGroup {
-                name: character.name,
-                moves,
-            });
-        }
-    }
-
-    Ok(groups)
-}
-
 fn print_results(groups: &[RosterGroup], filter_text: &str, options: RosterQueryOptions) {
     let total_matches: usize = groups.iter().map(|group| group.moves.len()).sum();
 
@@ -257,7 +226,7 @@ fn print_results(groups: &[RosterGroup], filter_text: &str, options: RosterQuery
 
 /// Run a roster-wide filter query and print the result.
 pub fn run(
-    server: Option<&mut LeanServer>,
+    server: &mut LeanServer,
     data_dir: &Path,
     manifest: &Manifest,
     filter_text: &str,
@@ -270,10 +239,7 @@ pub fn run(
         ));
     }
 
-    let groups = match server {
-        Some(server) => query_with_lean(server, data_dir, manifest, &filters)?,
-        None => query_with_rust(data_dir, manifest, &filters)?,
-    };
+    let groups = query_with_lean(server, data_dir, manifest, &filters)?;
 
     print_results(&groups, filter_text, options);
     Ok(())

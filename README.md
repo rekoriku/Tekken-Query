@@ -273,7 +273,7 @@ Type shorthand in the REPL — it auto-expands:
 
 Two layers: Lean 4 handles CSV conversion and authoritative query semantics with kernel-checked proofs; Rust handles the CLI, network, and display. The Lean binary runs as a persistent subprocess and communicates over line-delimited JSON. Responses are schema-checked and correlated by request ID before the CLI uses them.
 
-When the Lean binary is unavailable, queries can use a compatibility evaluator in Rust. If the Lean server starts but reports a load, protocol, or query error, that error is shown instead of silently switching evaluators. Data refreshes update the roster manifest only after every character succeeds, preventing a partial download from being marked current.
+All filter queries require the Lean binary; Rust only parses filter syntax and serializes requests. A missing binary or any server load, protocol, or query failure is reported instead of changing evaluator semantics. Data refreshes update the roster manifest only after every character succeeds, preventing a partial download from being marked current.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for module breakdown, server protocol, and proof list.
 

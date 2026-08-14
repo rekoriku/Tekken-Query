@@ -19,8 +19,6 @@ pub struct Move {
     #[serde(default, deserialize_with = "deserialize_opt_i64")]
     pub startup_end: Option<i64>,
     #[serde(default, deserialize_with = "deserialize_opt_i64")]
-    pub active_frames: Option<i64>,
-    #[serde(default, deserialize_with = "deserialize_opt_i64")]
     pub block_frame: Option<i64>,
     #[serde(default)]
     pub block_guardable: String,

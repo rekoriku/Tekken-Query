@@ -16,7 +16,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 use crate::error::CliError;
-use crate::filter::{matches_all, parse_filters};
+use crate::filter::parse_filters;
 use crate::lean_server::LeanServer;
 use crate::model::Move;
 
@@ -196,51 +196,23 @@ fn cmd_query(
     let filter_str = filter_tokens.join(" ");
     let filters = parse_filters(&filter_str)?;
 
-    // Use the verified evaluator when available. If it starts successfully,
-    // protocol and query failures are surfaced rather than silently changing
-    // evaluator semantics.
-    match LeanServer::start(data_dir) {
-        Ok(mut server) => {
-            let csv_path = data_dir.join("clean").join(format!("{}.csv", char.id));
-            server.load_character(&char.id, &char.name, &csv_path)?;
-            let qr = server.query(&char.id, &filters)?;
-            eprintln!(
-                "{} — {} matches (out of {})",
-                qr.name,
-                qr.count,
-                qr.total,
-            );
-            let refs: Vec<&Move> = qr.moves.iter().collect();
-            let cols = display::layout_for(&refs);
-            display::print_header(&cols);
-            for m in &refs {
-                eprintln!("{}", display::format_move_row(m, &cols));
-            }
-            server.quit();
-            return Ok(());
-        }
-        Err(CliError::DataNotFound(_)) => {}
-        Err(e) => return Err(e),
-    }
-
-    // Fallback: Rust-side evaluation
-    let results: Vec<_> = char
-        .moves
-        .iter()
-        .filter(|m| matches_all(m, &filters))
-        .collect();
-
+    let mut server = LeanServer::start(data_dir)?;
+    let csv_path = data_dir.join("clean").join(format!("{}.csv", char.id));
+    server.load_character(&char.id, &char.name, &csv_path)?;
+    let qr = server.query(&char.id, &filters)?;
     eprintln!(
         "{} — {} matches (out of {})",
-        char.name,
-        results.len(),
-        char.moves.len()
+        qr.name,
+        qr.count,
+        qr.total,
     );
-    let cols = display::layout_for(&results);
+    let refs: Vec<&Move> = qr.moves.iter().collect();
+    let cols = display::layout_for(&refs);
     display::print_header(&cols);
-    for m in &results {
+    for m in &refs {
         eprintln!("{}", display::format_move_row(m, &cols));
     }
+    server.quit();
     Ok(())
 }
 
@@ -295,63 +267,29 @@ fn cmd_compare(
     let filter_str = filter_tokens.join(" ");
     let filters = parse_filters(&filter_str)?;
 
-    match LeanServer::start(data_dir) {
-        Ok(mut server) => {
-            let csv1 = data_dir.join("clean").join(format!("{}.csv", char1.id));
-            let csv2 = data_dir.join("clean").join(format!("{}.csv", char2.id));
-            server.load_character(&char1.id, &char1.name, &csv1)?;
-            server.load_character(&char2.id, &char2.name, &csv2)?;
-            let cr = server.compare(&char1.id, &char2.id, &filters)?;
-            let refs1: Vec<&Move> = cr.char1_moves.iter().collect();
-            let refs2: Vec<&Move> = cr.char2_moves.iter().collect();
-            let all: Vec<&Move> = refs1.iter().chain(refs2.iter()).copied().collect();
-            let cols = display::layout_for(&all);
+    let mut server = LeanServer::start(data_dir)?;
+    let csv1 = data_dir.join("clean").join(format!("{}.csv", char1.id));
+    let csv2 = data_dir.join("clean").join(format!("{}.csv", char2.id));
+    server.load_character(&char1.id, &char1.name, &csv1)?;
+    server.load_character(&char2.id, &char2.name, &csv2)?;
+    let cr = server.compare(&char1.id, &char2.id, &filters)?;
+    let refs1: Vec<&Move> = cr.char1_moves.iter().collect();
+    let refs2: Vec<&Move> = cr.char2_moves.iter().collect();
+    let all: Vec<&Move> = refs1.iter().chain(refs2.iter()).copied().collect();
+    let cols = display::layout_for(&all);
 
-            eprintln!("--- {} ({} matches) ---", cr.char1_name, refs1.len());
-            display::print_header(&cols);
-            for m in &refs1 {
-                eprintln!("{}", display::format_move_row(m, &cols));
-            }
-            eprintln!();
-            eprintln!("--- {} ({} matches) ---", cr.char2_name, refs2.len());
-            display::print_header(&cols);
-            for m in &refs2 {
-                eprintln!("{}", display::format_move_row(m, &cols));
-            }
-            server.quit();
-            return Ok(());
-        }
-        Err(CliError::DataNotFound(_)) => {}
-        Err(e) => return Err(e),
-    }
-
-    // Fallback: Rust-side evaluation
-    let results1: Vec<_> = char1
-        .moves
-        .iter()
-        .filter(|m| matches_all(m, &filters))
-        .collect();
-    let results2: Vec<_> = char2
-        .moves
-        .iter()
-        .filter(|m| matches_all(m, &filters))
-        .collect();
-
-    let all_results: Vec<&Move> = results1.iter().chain(results2.iter()).copied().collect();
-    let cols = display::layout_for(&all_results);
-
-    eprintln!("--- {} [{}] ({} matches) ---", char1.name, char1.id, results1.len());
+    eprintln!("--- {} ({} matches) ---", cr.char1_name, refs1.len());
     display::print_header(&cols);
-    for m in &results1 {
+    for m in &refs1 {
         eprintln!("{}", display::format_move_row(m, &cols));
     }
-
     eprintln!();
-    eprintln!("--- {} [{}] ({} matches) ---", char2.name, char2.id, results2.len());
+    eprintln!("--- {} ({} matches) ---", cr.char2_name, refs2.len());
     display::print_header(&cols);
-    for m in &results2 {
+    for m in &refs2 {
         eprintln!("{}", display::format_move_row(m, &cols));
     }
+    server.quit();
     Ok(())
 }
 
@@ -365,7 +303,7 @@ fn cmd_all(
     filter_tokens: &[String],
 ) -> Result<(), CliError> {
     let manifest = data::load_manifest(data_dir)?;
-    let mut server = LeanServer::start(data_dir).ok();
+    let mut server = LeanServer::start(data_dir)?;
     let (mut options, filter_str) = roster_query::parse_inline_options(&filter_tokens.join(" "))?;
 
     if let Some(limit) = limit {
@@ -384,7 +322,9 @@ fn cmd_all(
         options.direction = roster_query::SortDirection::parse(order)?;
     }
 
-    roster_query::run(server.as_mut(), data_dir, &manifest, &filter_str, options)
+    let result = roster_query::run(&mut server, data_dir, &manifest, &filter_str, options);
+    server.quit();
+    result
 }
 
 fn cmd_fetch(data_dir: &Path) -> Result<(), CliError> {

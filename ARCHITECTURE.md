@@ -46,7 +46,7 @@ Handles everything that isn't data logic: network, display, user input, aliases.
 |--------|---------|
 | `interactive.rs` | REPL loop, fuzzy matching, aliases, notation normalization (incl. `cd` → crouch dash), global move lookup, list-all overview |
 | `lean_server.rs` | `LeanServer` subprocess: start, load, query, compare, convert, quit; filter→JSON serialization |
-| `filter.rs` | Filter token parsing (Rust→JSON translation); frame comparison syntax (`<+5`, `hit>0`, `ch>=5`); Rust-side eval fallback |
+| `filter.rs` | Filter token parsing for Rust→JSON translation; frame comparison syntax (`<+5`, `hit>0`, `ch>=5`) |
 | `fetch.rs` | GitHub API, raw CSV fetching, upstream commit checking, conversion via `LeanServer` |
 | `display.rs` | Column layout, color formatting (pad-then-colorize for ANSI alignment), per-component hit level coloring, single-move detail headers |
 | `model.rs` | `Move`, `Character` structs (deserialized from clean CSV) |
@@ -78,7 +78,7 @@ Current user-facing filters are token based. A query is a whitespace-separated l
 pc !stance !cmd:2+3 by:i asc
 ```
 
-Filtering itself is Lean-first: Rust parses tokens into `Filter` values, serializes them to JSON, and the Lean server evaluates them with `queryAll`. A compatibility evaluator in Rust is used only when the Lean binary is unavailable. Once the server starts, protocol, load, and query errors are surfaced rather than silently switching semantics. Output modifiers such as `by:i asc`, `limit:3`, `flat`, and `summary` are presentation logic and stay in Rust.
+Filtering itself is Lean-only: Rust parses tokens into `Filter` values, serializes them to JSON, and the Lean server evaluates them with `queryAll`. Filter queries require the Lean binary, and missing-backend, protocol, load, and query errors are surfaced without changing evaluator semantics. Output modifiers such as `by:i asc`, `limit:3`, `flat`, and `summary` are presentation logic and stay in Rust.
 
 Supported logical surface today:
 
