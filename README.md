@@ -5,8 +5,8 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
 ## Screenshots
 
 <p align="center">
-  <img src="assets/not_selected_move.png" width="520" alt="Global move lookup — df1 across all characters">
-  <br><em>Global move lookup — compare df+1 across all 40 characters</em>
+  <img src="assets/not_selected_move.png" width="520" alt="Global move lookup — df1 across the full roster">
+  <br><em>Global move lookup — compare df+1 across the full roster</em>
 </p>
 
 <p align="center">
@@ -23,6 +23,18 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
   <img src="assets/chars.png" width="520" alt="Character list with move counts">
   <br><em>Full roster with move counts</em>
 </p>
+
+## What's new in v0.1.4
+
+- A normalized command centre: open a character, run `reina df1` directly, or
+  compare `df1` across the full roster without changing context.
+- Universal frame and property queries such as `hit +5`, `block -10`,
+  `startup i15`, and `query pc`; prefix a character to scope the same query.
+- Clearer, color-separated help with context-specific commands, examples,
+  output modifiers, and correct REPL syntax in result hints.
+- `clear` removes visible terminal output from either interactive prompt.
+- Filter evaluation is Lean-only, so query failures are reported instead of
+  silently switching to an unverified Rust implementation.
 
 ## Quick Start
 
