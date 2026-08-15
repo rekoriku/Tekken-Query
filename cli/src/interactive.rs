@@ -6,6 +6,7 @@
 ///
 /// Filter evaluation is routed exclusively through the verified Lean
 /// query server.
+use std::io::{self, Write};
 use std::path::Path;
 
 use colored::Colorize;
@@ -746,6 +747,7 @@ fn print_char_help() {
             ("alias <name> ...", "Create a custom alias"),
             ("unalias <name>", "Remove a custom alias"),
             ("all / roster", "Compatibility aliases for query"),
+            ("clear", "Clear the visible terminal output"),
             ("help / ?", "Show this command-centre help"),
             ("quit / q", "Exit Tekken Query"),
         ],
@@ -806,6 +808,7 @@ fn print_query_help(character_name: &str) {
             ("home", "Return to Tekken > (aliases: back, b)"),
             ("aliases", "List custom aliases"),
             ("alias / unalias", "Create or remove a custom alias"),
+            ("clear", "Clear the visible terminal output"),
             ("help / ?", "Show help for this character prompt"),
             ("quit / q", "Exit Tekken Query"),
         ],
@@ -846,6 +849,15 @@ fn print_help_examples(entries: &[(&str, &str)]) {
 fn print_help_note(note: &str) {
     eprintln!();
     eprintln!("{}", format!("Tip: {note}").dimmed());
+}
+
+/// Clear the visible terminal and return the cursor to the top-left corner.
+fn clear_screen() -> Result<(), CliError> {
+    let mut stderr = io::stderr().lock();
+    stderr
+        .write_all(b"\x1b[2J\x1b[H")
+        .and_then(|()| stderr.flush())
+        .map_err(|error| CliError::IoError(format!("clear terminal: {error}")))
 }
 
 // ── REPL loops ──────────────────────────────────────────────────────
@@ -968,6 +980,10 @@ fn character_loop(
             }
             "query" => {
                 eprintln!("usage: query <filters>");
+                continue;
+            }
+            "clear" => {
+                clear_screen()?;
                 continue;
             }
             "all" | "roster" => {
@@ -1268,6 +1284,10 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
     while let Some(input) = read_line(&mut rl, "Tekken > ")? {
         if matches!(input.as_str(), "quit" | "q" | "exit") {
             break;
+        }
+        if input == "clear" {
+            clear_screen()?;
+            continue;
         }
 
         if handle_command_centre_command(

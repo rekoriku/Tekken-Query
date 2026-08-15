@@ -35,7 +35,7 @@ const ALIAS_TERMS: &[&str] = &[
 /// Commands available from the top-level command centre.
 const COMMAND_CENTRE_COMMANDS: &[&str] = &[
     "characters", "chars", "list", "overview", "list-all", "query",
-    "aliases", "alias", "unalias", "help", "quit",
+    "aliases", "alias", "unalias", "clear", "help", "quit",
 ];
 
 /// Presentation modifiers accepted after a roster query.
@@ -142,7 +142,10 @@ impl Completer for ReplHelper {
             } => {
                 let mut results = prefix_matches(
                     prefix,
-                    &["query", "moves", "list", "stats", "home", "back", "help", "quit"],
+                    &[
+                        "query", "moves", "list", "stats", "home", "back", "clear", "help",
+                        "quit",
+                    ],
                 );
                 results.extend(prefix_matches(prefix, FILTER_TOKENS));
                 results.extend(prefix_matches(prefix, ALIAS_TERMS));

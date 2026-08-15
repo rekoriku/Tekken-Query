@@ -85,6 +85,7 @@ Tekken > query pc         # roster-wide filter query
 Tekken > query i<15 hom   # any filter expression works
 Tekken > characters       # show all characters (aliases: chars, list)
 Tekken > overview         # roster overview (alias: list-all)
+Tekken > clear            # clear visible terminal output
 ```
 
 Type `help` or `?` at either prompt for context-specific help. The command-centre
@@ -92,6 +93,7 @@ screen explains global lookup, frame queries, roster filters, output modifiers,
 navigation, and aliases; a selected-character screen shows character-only move
 lookup and filter syntax. Colored headings, prompts, commands, examples, and tips
 separate each part while preserving terminal column alignment.
+The `clear` command is available at both the command centre and selected-character prompts.
 
 `query` is the canonical interactive command for roster-wide filters. The older
 `all` and `roster` spellings remain accepted as compatibility aliases.
