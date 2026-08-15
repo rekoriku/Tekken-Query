@@ -1,6 +1,6 @@
 /// Tab completion helpers for the interactive REPL.
 ///
-/// Two completion contexts: character selection and move query.
+/// Two completion contexts: the command centre and a selected character.
 use rustyline::completion::{Completer, Pair};
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
@@ -18,6 +18,7 @@ const FILTER_TOKENS: &[&str] = &[
     "stance",
     "cmd:", "name:", "note:", "stance:",
     "active",
+    "i", "i<", "i<=", "i=", "i>=", "i>",
     "hit>", "hit<", "hit>=", "hit<=", "hit=",
     "ch>", "ch<", "ch>=", "ch<=", "ch=",
     "block>", "block<", "block>=", "block<=", "block=",
@@ -31,10 +32,21 @@ const ALIAS_TERMS: &[&str] = &[
     "magic4", "cd", "crouchdash",
 ];
 
+/// Commands available from the top-level command centre.
+const COMMAND_CENTRE_COMMANDS: &[&str] = &[
+    "characters", "chars", "list", "overview", "list-all", "all",
+    "aliases", "alias", "unalias", "help", "quit",
+];
+
+/// Presentation modifiers accepted after `all <filters>`.
+const ROSTER_MODIFIERS: &[&str] = &[
+    "flat", "summary", "limit:", "by:i", "sort:", "order:", "asc", "desc",
+];
+
 /// REPL helper that provides context-aware tab completion.
 pub enum ReplHelper {
-    /// Character selection context.
-    CharacterSelect {
+    /// Top-level command-centre context.
+    CommandCentre {
         /// Character IDs for completion.
         characters: Vec<String>,
     },
@@ -94,9 +106,26 @@ impl Completer for ReplHelper {
         }
 
         let matches = match self {
-            Self::CharacterSelect { characters } => {
-                let mut results = prefix_matches(prefix, &["list", "list-all", "help", "quit"]);
-                results.extend(prefix_matches_owned(prefix, characters));
+            Self::CommandCentre { characters } => {
+                let first_word = line_to_cursor.split_whitespace().next().unwrap_or("");
+                let mut results = if word_start > 0 && first_word == "all" {
+                    let mut roster = prefix_matches(prefix, FILTER_TOKENS);
+                    roster.extend(prefix_matches(prefix, ROSTER_MODIFIERS));
+                    roster
+                } else if word_start > 0
+                    && characters
+                        .iter()
+                        .any(|character| character.eq_ignore_ascii_case(first_word))
+                {
+                    prefix_matches(prefix, ALIAS_TERMS)
+                } else {
+                    let mut centre = prefix_matches(prefix, COMMAND_CENTRE_COMMANDS);
+                    centre.extend(prefix_matches(prefix, ALIAS_TERMS));
+                    centre.extend(prefix_matches_owned(prefix, characters));
+                    centre
+                };
+                results.sort_by(|left, right| left.display.cmp(&right.display));
+                results.dedup_by(|left, right| left.replacement == right.replacement);
                 results
             }
             Self::MoveQuery {
@@ -104,7 +133,7 @@ impl Completer for ReplHelper {
                 stances,
             } => {
                 let mut results =
-                    prefix_matches(prefix, &["list", "stats", "back", "help", "quit"]);
+                    prefix_matches(prefix, &["moves", "list", "stats", "home", "back", "help", "quit"]);
                 results.extend(prefix_matches(prefix, FILTER_TOKENS));
                 results.extend(prefix_matches(prefix, ALIAS_TERMS));
                 results.extend(prefix_matches_owned(prefix, move_commands));

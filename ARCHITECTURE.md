@@ -44,7 +44,7 @@ Handles everything that isn't data logic: network, display, user input, aliases.
 
 | Module | Purpose |
 |--------|---------|
-| `interactive.rs` | REPL loop, fuzzy matching, aliases, notation normalization (incl. `cd` → crouch dash), global move lookup, list-all overview |
+| `interactive.rs` | Command-centre and selected-character REPL contexts, direct `<character> <move>` lookup, fuzzy matching, aliases, notation normalization, global lookup, roster overview |
 | `lean_server.rs` | `LeanServer` subprocess: start, load, query, compare, convert, quit; filter→JSON serialization |
 | `filter.rs` | Filter token parsing for Rust→JSON translation; frame comparison syntax (`<+5`, `hit>0`, `ch>=5`) |
 | `fetch.rs` | GitHub API, raw CSV fetching, upstream commit checking, conversion via `LeanServer` |

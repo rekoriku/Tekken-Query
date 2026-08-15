@@ -1,6 +1,6 @@
 /// Interactive REPL for querying Tekken frame data.
 ///
-/// Two-level loop: character selection → move query.
+/// Top-level command centre with an optional selected-character context.
 /// On startup, checks for upstream updates and fetches if needed.
 /// Uses rustyline for tab completion and command history.
 ///
@@ -14,7 +14,7 @@ use rustyline::Editor;
 
 use crate::aliases::{self, CustomAliases};
 use crate::completion::ReplHelper;
-use crate::data::Manifest;
+use crate::data::{CharacterMeta, Manifest};
 use crate::display;
 use crate::error::CliError;
 use crate::filter::parse_filters;
@@ -23,7 +23,7 @@ use crate::model::{Character, Move};
 
 /// Action returned from the inner character loop.
 enum LoopAction {
-    /// Go back to character selection.
+    /// Go back to the command centre.
     Back,
     /// Exit the program.
     Quit,
@@ -74,6 +74,31 @@ const FUZZY_THRESHOLD: f64 = 0.5;
 
 // ── Character resolution ────────────────────────────────────────────
 
+/// Normalize a character selector across spaces, hyphens, and case.
+fn normalize_character_key(input: &str) -> String {
+    input
+        .chars()
+        .flat_map(char::to_lowercase)
+        .filter(|c| c.is_alphanumeric())
+        .collect()
+}
+
+/// Find an exact character after normalizing common separator differences.
+fn find_exact_character<'a>(
+    input: &str,
+    manifest: &'a Manifest,
+) -> Option<&'a CharacterMeta> {
+    let key = normalize_character_key(input);
+    if key.is_empty() {
+        return None;
+    }
+
+    manifest.characters.iter().find(|character| {
+        normalize_character_key(&character.id) == key
+            || normalize_character_key(&character.name) == key
+    })
+}
+
 /// Find a character in the manifest.
 ///
 /// Priority order (never let fuzzy override exact):
@@ -86,21 +111,12 @@ const FUZZY_THRESHOLD: f64 = 0.5;
 fn find_character<'a>(
     input: &str,
     manifest: &'a Manifest,
-) -> Option<&'a crate::data::CharacterMeta> {
+) -> Option<&'a CharacterMeta> {
     let lower = input.to_lowercase();
 
-    // 1. Exact ID match
-    if let Some(c) = manifest.characters.iter().find(|c| c.id == lower) {
-        return Some(c);
-    }
-
-    // 2. Exact name match (case-insensitive)
-    if let Some(c) = manifest
-        .characters
-        .iter()
-        .find(|c| c.name.to_lowercase() == lower)
-    {
-        return Some(c);
+    // 1–2. Exact ID or display-name match, with separator normalization.
+    if let Some(character) = find_exact_character(input, manifest) {
+        return Some(character);
     }
 
     // 3. Prefix match on ID
@@ -135,7 +151,7 @@ fn find_character<'a>(
     }
 
     // 6. Fuzzy match (best score above threshold)
-    let mut best: Option<(&crate::data::CharacterMeta, f64)> = None;
+    let mut best: Option<(&CharacterMeta, f64)> = None;
     for c in &manifest.characters {
         let id_sim = similarity(&lower, &c.id);
         let name_sim = similarity(&lower, &c.name.to_lowercase());
@@ -149,10 +165,48 @@ fn find_character<'a>(
     best.map(|(c, _)| c)
 }
 
+/// Split `<character> <move>` entered at the command centre.
+///
+/// Exact character names and IDs take priority, including multi-word names.
+/// A single-token shorthand such as `kaz df1` may use normal character fuzzy
+/// resolution after exact matching fails.
+fn parse_direct_move_lookup<'input, 'manifest>(
+    input: &'input str,
+    manifest: &'manifest Manifest,
+) -> Option<(&'manifest CharacterMeta, &'input str)> {
+    if find_exact_character(input, manifest).is_some() {
+        return None;
+    }
+
+    let boundaries: Vec<usize> = input
+        .char_indices()
+        .filter_map(|(index, c)| c.is_whitespace().then_some(index))
+        .collect();
+
+    for boundary in boundaries.iter().rev() {
+        let selector = input[..*boundary].trim();
+        let move_query = input[*boundary..].trim();
+        if move_query.is_empty() {
+            continue;
+        }
+        if let Some(character) = find_exact_character(selector, manifest) {
+            return Some((character, move_query));
+        }
+    }
+
+    let first_boundary = boundaries.first()?;
+    let selector = input[..*first_boundary].trim();
+    let move_query = input[*first_boundary..].trim();
+    if move_query.is_empty() {
+        return None;
+    }
+    find_character(selector, manifest).map(|character| (character, move_query))
+}
+
 /// Load a character's moves from clean CSV.
 fn load_character(
     data_dir: &Path,
-    meta: &crate::data::CharacterMeta,
+    meta: &CharacterMeta,
 ) -> Result<Character, CliError> {
     crate::data::load_character(data_dir, &meta.id, &meta.name)
 }
@@ -487,7 +541,7 @@ fn looks_like_move_input(input: &str, custom_aliases: &CustomAliases) -> bool {
 
 /// Look up a move command across all characters.
 ///
-/// Used from the character select screen to compare a specific move
+/// Used from the command centre to compare a specific move
 /// (e.g., `df1`) across the entire roster.
 fn global_move_lookup(
     data_dir: &Path,
@@ -602,62 +656,64 @@ fn print_character_list(manifest: &Manifest) {
     }
 }
 
-/// Print help for the character selection screen.
+/// Print help for the top-level command centre.
 fn print_char_help() {
-    eprintln!("{}", "Commands:".bold());
-    eprintln!("  <name>     Select a character (fuzzy match: jin, kaz, devil, yoshi...)");
-    eprintln!("  <move>     Look up a move across all characters (df1, ewgf, hopkick...)");
-    eprintln!("  all <filters>  Query moves across all characters (all pc, all i<15 hom)");
-    eprintln!("               Options: limit:N, flat, summary, by:i asc|desc");
-    eprintln!("  list       Show all characters");
-    eprintln!("  list-all   Character overview (+OB, +OH lows, HS startup)");
+    eprintln!("{}", "Command centre".bold());
+    eprintln!("  {:<24} open a character", "<character>");
+    eprintln!("  {:<24} look up one character's move", "<character> <move>");
+    eprintln!("  {:<24} compare a move across the roster", "<move>");
+    eprintln!("  {:<24} query the whole roster", "all <filters>");
     eprintln!();
-    eprintln!("{}", "Aliases:".bold());
-    eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]");
-    eprintln!("               Create a custom move alias");
-    eprintln!("  unalias <name>  Remove a custom alias");
-    eprintln!("  aliases    List custom aliases");
+    eprintln!("{}", "Browse".bold());
+    eprintln!("  {:<24} show all characters", "characters");
+    eprintln!("  {:<24} show the roster overview", "overview");
     eprintln!();
-    eprintln!("  quit       Exit");
+    eprintln!("{}", "Examples".bold());
+    eprintln!("  reina                  open Reina");
+    eprintln!("  armor king df1         direct lookup using a full character name");
+    eprintln!("  ewgf                   compare an alias across the roster");
+    eprintln!("  all i<15 hom by:i asc  roster filter with sorting");
+    eprintln!();
+    eprintln!("{}", "Custom aliases".bold());
+    eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]  create");
+    eprintln!("  unalias <name>                              remove");
+    eprintln!("  aliases                                     list");
+    eprintln!();
+    eprintln!("Aliases: characters = chars/list, overview = list-all");
+    eprintln!("Type help at any prompt for context-specific help; quit exits.");
 }
 
-/// Print help for the move query screen.
+/// Print help for a selected character.
 fn print_query_help() {
-    eprintln!("{}", "Filter tokens (AND'd together):".bold());
-    eprintln!("  {:<20} hit level", "high, mid, low");
-    eprintln!("  {:<20} block frame category", "plus, minus, punish");
-    eprintln!("  {:<20} startup frames", "i15, i=15, i<15, i>=15");
-    eprintln!("  {:<20} block frames", "<0, <=-10, =0, block>=+3");
-    eprintln!("  {:<20} hit / CH frames", "hit>0, hit=0, ch>=5");
-    eprintln!("  {:<20} move tags", "hom, pc, he, hs, heat, trn");
-    eprintln!("  {:<20} stance moves", "stance, stance:ZEN");
+    eprintln!("{}", "Selected character".bold());
+    eprintln!("  {:<32} look up a move", "df2, cd2, ewgf");
+    eprintln!("  {:<32} show the full movelist", "moves");
+    eprintln!("  {:<32} show character stats", "stats");
+    eprintln!("  {:<32} return to the command centre", "home");
+    eprintln!();
+    eprintln!("{}", "Filter query (tokens are ANDed)".bold());
+    eprintln!("  {:<32} hit level", "high, mid, low");
+    eprintln!("  {:<32} block frame category", "plus, minus, punish");
+    eprintln!("  {:<32} startup frames", "i15, i=15, i<15, i>=15");
+    eprintln!("  {:<32} block frames", "<0, <=-10, =0, block>=+3");
+    eprintln!("  {:<32} hit / CH frames", "hit>0, hit=0, ch>=5");
+    eprintln!("  {:<32} move tags", "hom, pc, he, hs, heat, trn");
+    eprintln!("  {:<32} stance moves", "stance, stance:ZEN");
     eprintln!(
-        "  {:<20} substring search",
+        "  {:<32} substring search",
         "cmd:df+2, name:kick, note:crush"
     );
-    eprintln!("  {:<20} negate any filter", "!punish, !hom");
+    eprintln!("  {:<32} negate any filter", "!punish, !hom");
     eprintln!();
-    eprintln!("{}", "Move lookup:".bold());
-    eprintln!("  <command>  Look up a move (df2, uf4, ws4, b+1+2...)");
-    eprintln!("  <alias>    Move aliases:");
-    eprintln!("             ewgf, wgf, hellsweep, hopkick, dickjab,");
-    eprintln!("             snakeedge, orbital, tombstone, giantswing,");
-    eprintln!("             demonspaw, rageart, cd, magic4");
-    eprintln!();
-    eprintln!("{}", "Notation shortcuts:".bold());
+    eprintln!("{}", "Move lookup shortcuts".bold());
     eprintln!("  df2 → df+2, uf4 → uf+4, ff2 → f,F+2, b4 → b+4");
+    eprintln!("  aliases: ewgf, hellsweep, hopkick, orbital, magic4, cd");
     eprintln!();
-    eprintln!("{}", "Aliases:".bold());
+    eprintln!("{}", "Custom aliases".bold());
     eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]");
-    eprintln!("               Create a custom move alias");
-    eprintln!("  unalias <name>  Remove a custom alias");
-    eprintln!("  aliases    List custom aliases");
+    eprintln!("  unalias <name> | aliases");
     eprintln!();
-    eprintln!("{}", "Other:".bold());
-    eprintln!("  list       Show full movelist");
-    eprintln!("  stats      Show character stats");
-    eprintln!("  back       Return to character selection");
-    eprintln!("  quit       Exit");
+    eprintln!("Aliases: moves = list/ls, home = back/b; quit exits.");
 }
 
 // ── REPL loops ──────────────────────────────────────────────────────
@@ -759,7 +815,7 @@ fn character_loop(
 
         match input.as_str() {
             "quit" | "q" | "exit" => return Ok(LoopAction::Quit),
-            "back" | "b" | "new" => return Ok(LoopAction::Back),
+            "home" | "back" | "b" | "new" => return Ok(LoopAction::Back),
             "help" | "?" => {
                 print_query_help();
                 continue;
@@ -768,7 +824,7 @@ fn character_loop(
                 display::print_character_stats(&character.name, &character.moves);
                 continue;
             }
-            "list" | "ls" | "all" => {
+            "moves" | "list" | "ls" | "all" => {
                 let refs: Vec<&Move> = character.moves.iter().collect();
                 eprintln!("{} — {} moves", character.name.bold(), refs.len());
                 let cols = display::layout_for(&refs);
@@ -880,7 +936,37 @@ fn print_aliases(custom_aliases: &CustomAliases) {
     }
 }
 
-/// Handle `all <filters...>` / `roster <filters...>` at character select.
+/// Handle built-in command-centre commands that do not query moves.
+fn handle_command_centre_command(
+    input: &str,
+    data_dir: &Path,
+    manifest: &Manifest,
+    custom_aliases: &mut CustomAliases,
+) -> bool {
+    match input {
+        "characters" | "chars" | "list" | "ls" => print_character_list(manifest),
+        "overview" | "list-all" | "la" => cmd_list_all(data_dir, manifest),
+        "help" | "?" => print_char_help(),
+        "aliases" => print_aliases(custom_aliases),
+        "all" | "roster" => {
+            eprintln!("usage: all <filters> [limit:N|flat|summary|by:i asc|desc]");
+        }
+        "alias" => eprintln!("usage: alias <name> cmd:<pattern> [name:<pattern>]"),
+        "unalias" => eprintln!("usage: unalias <name>"),
+        _ => {
+            if let Some(rest) = input.strip_prefix("alias ") {
+                handle_alias_add(rest.trim(), custom_aliases, data_dir);
+            } else if let Some(rest) = input.strip_prefix("unalias ") {
+                handle_alias_remove(rest.trim(), custom_aliases, data_dir);
+            } else {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Handle `all <filters...>` / `roster <filters...>` at the command centre.
 fn handle_roster_query(
     server: &mut LeanServer,
     data_dir: &Path,
@@ -903,6 +989,30 @@ fn handle_roster_query(
             }
         }
         Err(e) => eprintln!("{e}"),
+    }
+    true
+}
+
+/// Handle `<character> <move>` at the command centre.
+fn handle_direct_move_lookup(
+    data_dir: &Path,
+    manifest: &Manifest,
+    input: &str,
+    custom_aliases: &CustomAliases,
+) -> bool {
+    let Some((meta, move_query)) = parse_direct_move_lookup(input, manifest) else {
+        return false;
+    };
+
+    match load_character(data_dir, meta) {
+        Ok(character) => {
+            eprintln!(
+                "{} — direct move lookup for '{move_query}'",
+                character.name.bold()
+            );
+            try_move_lookup(&character, move_query, custom_aliases);
+        }
+        Err(e) => eprintln!("Failed to load {}: {e}", meta.id),
     }
     true
 }
@@ -938,7 +1048,7 @@ fn init_repl(data_dir: &Path) -> Result<(LeanServer, Manifest, bool), CliError> 
 ///
 /// On startup: checks for upstream data updates and fetches if needed.
 /// Tries to start the Lean query server for verified filter evaluation.
-/// Then enters a two-level loop: character selection → move query.
+/// Then enters the command centre, with a selected-character context on demand.
 /// Uses rustyline for tab completion and command history.
 pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
     let (mut server, manifest, _updated) = init_repl(data_dir)?;
@@ -954,45 +1064,33 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
     // History file may not exist yet on first run
     let _ = rl.load_history(&history_path);
 
-    let char_helper = ReplHelper::CharacterSelect {
+    let char_helper = ReplHelper::CommandCentre {
         characters: manifest.characters.iter().map(|c| c.id.clone()).collect(),
     };
     rl.set_helper(Some(char_helper));
 
-    // Character selection loop
-    while let Some(input) = read_line(&mut rl, "Character? > ")? {
-        match input.as_str() {
-            "quit" | "q" | "exit" => break,
-            "list" | "ls" => {
-                print_character_list(&manifest);
-                continue;
-            }
-            "list-all" | "la" => {
-                cmd_list_all(data_dir, &manifest);
-                continue;
-            }
-            "help" | "?" => {
-                print_char_help();
-                continue;
-            }
-            "aliases" => {
-                print_aliases(&custom_aliases);
-                continue;
-            }
-            _ => {}
+    eprintln!("Type 'help' to see command-centre examples.\n");
+
+    // Command-centre loop
+    while let Some(input) = read_line(&mut rl, "Tekken > ")? {
+        if matches!(input.as_str(), "quit" | "q" | "exit") {
+            break;
         }
 
-        // Alias management commands (available from character select too)
-        if let Some(rest) = input.strip_prefix("alias ") {
-            handle_alias_add(rest.trim(), &mut custom_aliases, data_dir);
-            continue;
-        }
-        if let Some(rest) = input.strip_prefix("unalias ") {
-            handle_alias_remove(rest.trim(), &mut custom_aliases, data_dir);
+        if handle_command_centre_command(
+            &input,
+            data_dir,
+            &manifest,
+            &mut custom_aliases,
+        ) {
             continue;
         }
 
         if handle_roster_query(&mut server, data_dir, &manifest, &input) {
+            continue;
+        }
+
+        if handle_direct_move_lookup(data_dir, &manifest, &input, &custom_aliases) {
             continue;
         }
 
@@ -1015,7 +1113,7 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
                 .collect();
 
             if suggestions.is_empty() {
-                eprintln!("Unknown character '{input}'. Type 'list' to see all.");
+                eprintln!("Unknown command or character '{input}'. Type 'help' for examples.");
             } else {
                 eprintln!("Did you mean:");
                 for s in &suggestions {
@@ -1043,8 +1141,8 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
         // Enter character query loop
         match character_loop(&mut rl, &character, &mut server, &mut custom_aliases, data_dir)? {
             LoopAction::Back => {
-                // Restore character selection completer
-                let char_helper = ReplHelper::CharacterSelect {
+                // Restore command-centre completion.
+                let char_helper = ReplHelper::CommandCentre {
                     characters: manifest
                         .characters
                         .iter()
@@ -1064,4 +1162,65 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
     let _ = rl.save_history(&history_path);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::data::{CharacterMeta, Manifest};
+
+    use super::{find_character, parse_direct_move_lookup};
+
+    fn test_manifest() -> Manifest {
+        Manifest {
+            updated: String::new(),
+            commit_sha: String::new(),
+            characters: vec![
+                CharacterMeta {
+                    id: "reina".into(),
+                    name: "Reina".into(),
+                    moves: 0,
+                },
+                CharacterMeta {
+                    id: "armor-king".into(),
+                    name: "Armor King".into(),
+                    moves: 0,
+                },
+                CharacterMeta {
+                    id: "kazuya".into(),
+                    name: "Kazuya".into(),
+                    moves: 0,
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn resolves_character_separator_variants() {
+        let manifest = test_manifest();
+
+        assert!(find_character("armor king", &manifest)
+            .is_some_and(|character| character.id == "armor-king"));
+        assert!(find_character("Armor-King", &manifest)
+            .is_some_and(|character| character.id == "armor-king"));
+    }
+
+    #[test]
+    fn parses_direct_character_move_lookup() {
+        let manifest = test_manifest();
+
+        assert!(parse_direct_move_lookup("reina df1", &manifest)
+            .is_some_and(|(character, query)| character.id == "reina" && query == "df1"));
+        assert!(parse_direct_move_lookup("armor king df1", &manifest)
+            .is_some_and(|(character, query)| character.id == "armor-king" && query == "df1"));
+        assert!(parse_direct_move_lookup("kaz ewgf", &manifest)
+            .is_some_and(|(character, query)| character.id == "kazuya" && query == "ewgf"));
+    }
+
+    #[test]
+    fn character_without_move_remains_character_selection() {
+        let manifest = test_manifest();
+
+        assert!(parse_direct_move_lookup("reina", &manifest).is_none());
+        assert!(parse_direct_move_lookup("armor king", &manifest).is_none());
+    }
 }

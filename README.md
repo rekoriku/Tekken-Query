@@ -66,17 +66,21 @@ That's the main way to use it. One-shot CLI commands (`query`, `compare`, `move`
 tekken-cli interactive
 ```
 
-Two-level interface: pick a character, then query their moves.
+The top-level prompt is a command centre. From there you can open a character,
+look up one character's move directly, compare a move across the roster, or run
+a roster-wide filter query.
 
-**Character selection:**
+**Command centre:**
 ```
-Character? > jin          # fuzzy match: jin, kaz, devil, yoshi...
-Character? > df1          # global move lookup across all characters
-Character? > ewgf         # aliases work too
-Character? > all pc       # roster-wide filter query
-Character? > all i<15 hom # any filter expression works
-Character? > list         # show all characters
-Character? > list-all     # roster overview (+OB count, HS startup)
+Tekken > jin              # open Jin (fuzzy matching still works)
+Tekken > reina df1        # look up Reina's df+1 without opening Reina
+Tekken > armor king df1   # full character names work too
+Tekken > df1              # compare df+1 across all characters
+Tekken > ewgf             # global move aliases work too
+Tekken > all pc           # roster-wide filter query
+Tekken > all i<15 hom     # any filter expression works
+Tekken > characters       # show all characters (aliases: chars, list)
+Tekken > overview         # roster overview (alias: list-all)
 ```
 
 **Move queries** (filters are AND'd together):
@@ -164,9 +168,9 @@ CLI flags are also available for scripting: `--limit 0`, `--flat`, `--summary`, 
 In interactive mode, use modifier tokens, not shell quotes:
 
 ```text
-Character? > all pc !cmd:2+3 by:i asc
-Character? > all mid limit:3
-Character? > all heat summary
+Tekken > all pc !cmd:2+3 by:i asc
+Tekken > all mid limit:3
+Tekken > all heat summary
 ```
 
 Shell quoting is only needed in your terminal when the shell would otherwise interpret a token, for example:
@@ -247,8 +251,8 @@ Built-in aliases for common community terminology:
 Create your own aliases — saved to `data/aliases.json` and persisted across sessions:
 
 ```
-Character? > alias pewgf cmd:f,n,d,df:2 name:perfect electric
-Character? > alias mysetup cmd:df+2 name:wind god
+Tekken > alias pewgf cmd:f,n,d,df:2 name:perfect electric
+Tekken > alias mysetup cmd:df+2 name:wind god
 
 Jin > pewgf                # uses your custom alias
 Jin > aliases              # list all custom aliases
