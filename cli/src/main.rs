@@ -322,7 +322,14 @@ fn cmd_all(
         options.direction = roster_query::SortDirection::parse(order)?;
     }
 
-    let result = roster_query::run(&mut server, data_dir, &manifest, &filter_str, options);
+    let result = roster_query::run(
+        &mut server,
+        data_dir,
+        &manifest,
+        &filter_str,
+        options,
+        roster_query::QueryOrigin::CommandLine,
+    );
     server.quit();
     result
 }

@@ -16,6 +16,25 @@ struct RosterGroup {
     moves: Vec<Move>,
 }
 
+/// User interface that initiated a roster query.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum QueryOrigin {
+    /// One-shot shell command.
+    CommandLine,
+    /// Interactive REPL command.
+    Interactive,
+}
+
+impl QueryOrigin {
+    /// Return the unlimited-results syntax valid for this interface.
+    fn unlimited_rows_command(self) -> &'static str {
+        match self {
+            Self::CommandLine => "--limit 0",
+            Self::Interactive => "limit:0",
+        }
+    }
+}
+
 /// Sort direction for roster-wide query output.
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
 pub enum SortDirection {
@@ -123,6 +142,14 @@ pub fn parse_inline_options(input: &str) -> Result<(RosterQueryOptions, String),
 
 /// Backwards-compatible name for the REPL call site.
 pub fn parse_interactive_options(input: &str) -> Result<(RosterQueryOptions, String), CliError> {
+    if input
+        .split_whitespace()
+        .any(|token| token == "--limit" || token.starts_with("--limit="))
+    {
+        return Err(CliError::InvalidFilter(
+            "use limit:N in the REPL; for all rows, use limit:0".into(),
+        ));
+    }
     parse_inline_options(input)
 }
 
@@ -187,7 +214,12 @@ fn query_with_lean(
     Ok(groups)
 }
 
-fn print_results(groups: &[RosterGroup], filter_text: &str, options: RosterQueryOptions) {
+fn print_results(
+    groups: &[RosterGroup],
+    filter_text: &str,
+    options: RosterQueryOptions,
+    origin: QueryOrigin,
+) {
     let total_matches: usize = groups.iter().map(|group| group.moves.len()).sum();
 
     if options.summary {
@@ -221,6 +253,7 @@ fn print_results(groups: &[RosterGroup], filter_text: &str, options: RosterQuery
         filter_text,
         options.per_character_limit,
         total_matches,
+        origin.unlimited_rows_command(),
     );
 }
 
@@ -231,6 +264,7 @@ pub fn run(
     manifest: &Manifest,
     filter_text: &str,
     options: RosterQueryOptions,
+    origin: QueryOrigin,
 ) -> Result<(), CliError> {
     let filters = parse_filters(filter_text)?;
     if filters.is_empty() {
@@ -241,6 +275,23 @@ pub fn run(
 
     let groups = query_with_lean(server, data_dir, manifest, &filters)?;
 
-    print_results(&groups, filter_text, options);
+    print_results(&groups, filter_text, options, origin);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_interactive_options, QueryOrigin};
+
+    #[test]
+    fn limit_hints_match_the_query_interface() {
+        assert_eq!(QueryOrigin::CommandLine.unlimited_rows_command(), "--limit 0");
+        assert_eq!(QueryOrigin::Interactive.unlimited_rows_command(), "limit:0");
+    }
+
+    #[test]
+    fn repl_rejects_shell_limit_syntax_with_repl_guidance() {
+        let result = parse_interactive_options("block=-14 --limit 0");
+        assert!(result.is_err_and(|error| error.to_string().contains("use limit:0")));
+    }
 }

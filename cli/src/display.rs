@@ -320,6 +320,7 @@ pub fn print_roster_query_grouped<'a>(
     query: &str,
     per_character_limit: Option<usize>,
     total_matches: usize,
+    unlimited_rows_command: &str,
 ) {
     eprintln!(
         "{} matches across {} characters for '{query}'",
@@ -352,8 +353,8 @@ pub fn print_roster_query_grouped<'a>(
 
         if per_character_limit.is_some_and(|limit| moves.len() > limit) {
             eprintln!(
-                "  ... {} more. Use --limit 0, or limit:0 in the REPL, to show all rows.",
-                moves.len() - per_character_limit.unwrap_or(0)
+                "  ... {} more. Use {unlimited_rows_command} to show all rows.",
+                moves.len() - per_character_limit.unwrap_or(0),
             );
         }
     }

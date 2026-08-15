@@ -1156,7 +1156,14 @@ fn handle_roster_query(
     match crate::roster_query::parse_interactive_options(rest) {
         Ok((options, filter_text)) => {
             if let Err(e) =
-                crate::roster_query::run(server, data_dir, manifest, &filter_text, options)
+                crate::roster_query::run(
+                    server,
+                    data_dir,
+                    manifest,
+                    &filter_text,
+                    options,
+                    crate::roster_query::QueryOrigin::Interactive,
+                )
             {
                 eprintln!("{e}");
             }
@@ -1216,7 +1223,14 @@ fn handle_global_frame_query(
     match crate::roster_query::parse_interactive_options(input) {
         Ok((options, filter_text)) => {
             if let Err(e) =
-                crate::roster_query::run(server, data_dir, manifest, &filter_text, options)
+                crate::roster_query::run(
+                    server,
+                    data_dir,
+                    manifest,
+                    &filter_text,
+                    options,
+                    crate::roster_query::QueryOrigin::Interactive,
+                )
             {
                 eprintln!("{e}");
             }
