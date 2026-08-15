@@ -687,68 +687,163 @@ fn print_character_list(manifest: &Manifest) {
 
 /// Print help for the top-level command centre.
 fn print_char_help() {
-    eprintln!("{}", "Command centre".bold());
-    eprintln!("  {:<24} open a character", "<character>");
-    eprintln!("  {:<24} look up one character's move", "<character> <move>");
-    eprintln!("  {:<24} compare a move across the roster", "<move>");
-    eprintln!("  {:<24} query frames across the roster", "<frame query>");
-    eprintln!("  {:<24} query one character's frames", "<character> <frame query>");
-    eprintln!("  {:<24} query the whole roster", "all <filters>");
-    eprintln!();
-    eprintln!("{}", "Browse".bold());
-    eprintln!("  {:<24} show all characters", "characters");
-    eprintln!("  {:<24} show the roster overview", "overview");
-    eprintln!();
-    eprintln!("{}", "Examples".bold());
-    eprintln!("  reina                  open Reina");
-    eprintln!("  armor king df1         direct lookup using a full character name");
-    eprintln!("  ewgf                   compare an alias across the roster");
-    eprintln!("  hit +5                 every move that is +5 on hit");
-    eprintln!("  reina block -10        Reina's moves that are -10 on block");
-    eprintln!("  startup i15            every i15 move");
-    eprintln!("  all i<15 hom by:i asc  roster filter with sorting");
-    eprintln!();
-    eprintln!("{}", "Custom aliases".bold());
-    eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]  create");
-    eprintln!("  unalias <name>                              remove");
-    eprintln!("  aliases                                     list");
-    eprintln!();
-    eprintln!("Aliases: characters = chars/list, overview = list-all");
-    eprintln!("Type help at any prompt for context-specific help; quit exits.");
+    print_help_context(
+        "Tekken >",
+        "Global command centre: roster searches, direct lookups, and navigation.",
+    );
+    print_help_section(
+        "Character and move lookup",
+        &[
+            ("<character>", "Open that character's prompt"),
+            ("<character> <move>", "Look up one character's move directly"),
+            ("<move>", "Compare that move across the entire roster"),
+            ("<alias>", "Compare a built-in or custom move alias globally"),
+        ],
+    );
+    print_help_examples(&[
+        ("reina", "Open Reina"),
+        ("armor king df1", "Look up Armor King's df+1 directly"),
+        ("df1", "Compare df+1 across all characters"),
+        ("ewgf", "Compare the EWGF alias across the roster"),
+    ]);
+    print_help_section(
+        "Frame queries — roster-wide unless a character is prefixed",
+        &[
+            ("hit +5", "Exactly +5 on hit across all characters"),
+            ("block -10", "Exactly -10 on block across all characters"),
+            ("startup i15", "All moves with i15 startup"),
+            ("ch >= +5", "Counter-hit advantage of at least +5"),
+            ("reina hit +5", "Scope the same query to Reina"),
+            ("hit +5 summary", "Show roster counts instead of move rows"),
+        ],
+    );
+    print_help_section(
+        "Roster filter queries",
+        &[
+            ("all <filters>", "Combine filters across the whole roster"),
+            ("all mid plus", "Mids that are plus on block"),
+            ("all i<15 hom", "Homing moves faster than i15"),
+            ("all low !punish", "Lows that are not punishable"),
+            ("all pc !high", "Power crushes that are not highs"),
+            ("all heat", "Heat engagers, smashes, burst, and H. moves"),
+        ],
+    );
+    print_help_section(
+        "Roster output modifiers",
+        &[
+            ("summary", "Character match counts only"),
+            ("limit:N / limit:0", "Rows per character / show every row"),
+            ("flat", "One global table instead of character groups"),
+            ("by:i asc / desc", "Sort globally by startup"),
+        ],
+    );
+    print_help_section(
+        "Browse and manage",
+        &[
+            ("characters", "List the roster (aliases: chars, list)"),
+            ("overview", "Roster overview (alias: list-all)"),
+            ("aliases", "List custom aliases"),
+            ("alias <name> ...", "Create a custom alias"),
+            ("unalias <name>", "Remove a custom alias"),
+            ("help / ?", "Show this command-centre help"),
+            ("quit / q", "Exit Tekken Query"),
+        ],
+    );
+    print_help_note("Open a character to get help for character-only filters and commands.");
 }
 
 /// Print help for a selected character.
-fn print_query_help() {
-    eprintln!("{}", "Selected character".bold());
-    eprintln!("  {:<32} look up a move", "df2, cd2, ewgf");
-    eprintln!("  {:<32} show the full movelist", "moves");
-    eprintln!("  {:<32} show character stats", "stats");
-    eprintln!("  {:<32} return to the command centre", "home");
-    eprintln!();
-    eprintln!("{}", "Filter query (tokens are ANDed)".bold());
-    eprintln!("  {:<32} hit level", "high, mid, low");
-    eprintln!("  {:<32} block frame category", "plus, minus, punish");
-    eprintln!("  {:<32} startup frames", "i15, i=15, i<15, i>=15");
-    eprintln!("  {:<32} block frames", "<0, <=-10, =0, block>=+3");
-    eprintln!("  {:<32} hit / CH frames", "hit>0, hit=0, ch>=5");
-    eprintln!("  {:<32} spaced frame query", "hit +5, block -10, startup i15");
-    eprintln!("  {:<32} move tags", "hom, pc, he, hs, heat, trn");
-    eprintln!("  {:<32} stance moves", "stance, stance:ZEN");
-    eprintln!(
-        "  {:<32} substring search",
-        "cmd:df+2, name:kick, note:crush"
+fn print_query_help(character_name: &str) {
+    let prompt = format!("{character_name} >");
+    print_help_context(
+        &prompt,
+        "Selected-character prompt: every lookup and filter is scoped here.",
     );
-    eprintln!("  {:<32} negate any filter", "!punish, !hom");
+    print_help_section(
+        "Move lookup",
+        &[
+            ("df2 / uf4 / ws4", "Look up command notation"),
+            ("cd2", "Crouch-dash shorthand: f,n,d,df+2"),
+            ("ewgf / hopkick", "Use a built-in or custom alias"),
+            ("name text", "Move-name text also uses fuzzy lookup"),
+        ],
+    );
+    print_help_section(
+        "Common filters — tokens are combined with AND",
+        &[
+            ("high / mid / low / throw", "Hit-level categories"),
+            ("plus / minus / punish", "Block-frame categories"),
+            ("i15 / i<15 / i>=15", "Startup frame comparisons"),
+            ("hom / pc / he / hs / heat / trn", "Move properties"),
+            ("stance / stance:ZEN", "Any stance / a specific stance"),
+            ("cmd: / name: / note:", "Substring searches"),
+            ("!<filter>", "Negate any filter, for example !punish"),
+        ],
+    );
+    print_help_examples(&[
+        ("mid plus", "Mids that are plus on block"),
+        ("i<15 hom", "Homing moves faster than i15"),
+        ("low !punish", "Lows that are not punishable"),
+        ("pc !high", "Power crushes that are not highs"),
+    ]);
+    print_help_section(
+        "Frame queries",
+        &[
+            ("hit +5 / hit=+5", "Exactly +5 on hit"),
+            ("block -10 / block=-10", "Exactly -10 on block"),
+            ("startup i15 / i15", "Exactly i15 startup"),
+            ("ch >= +5 / ch>=5", "Counter-hit advantage of at least +5"),
+            ("<0 / <=-10 / >=+3", "Bare comparisons target block frames"),
+        ],
+    );
+    print_help_section(
+        "Character commands",
+        &[
+            ("moves", "Show the full movelist (aliases: list, ls)"),
+            ("stats", "Show character statistics"),
+            ("home", "Return to Tekken > (aliases: back, b)"),
+            ("aliases", "List custom aliases"),
+            ("alias / unalias", "Create or remove a custom alias"),
+            ("help / ?", "Show help for this character prompt"),
+            ("quit / q", "Exit Tekken Query"),
+        ],
+    );
+    print_help_note("Use home before a roster-wide lookup, or prefix the query at Tekken >.");
+}
+
+const HELP_SYNTAX_WIDTH: usize = 34;
+
+/// Print a colored help context and explain its scope.
+fn print_help_context(prompt: &str, description: &str) {
     eprintln!();
-    eprintln!("{}", "Move lookup shortcuts".bold());
-    eprintln!("  df2 → df+2, uf4 → uf+4, ff2 → f,F+2, b4 → b+4");
-    eprintln!("  aliases: ewgf, hellsweep, hopkick, orbital, magic4, cd");
+    eprintln!("{}", "HELP".bright_yellow().bold());
+    eprintln!("  {}  {}", prompt.magenta().bold(), description);
+}
+
+/// Print one colored help section with aligned command syntax.
+fn print_help_section(title: &str, entries: &[(&str, &str)]) {
     eprintln!();
-    eprintln!("{}", "Custom aliases".bold());
-    eprintln!("  alias <name> cmd:<pattern> [name:<pattern>]");
-    eprintln!("  unalias <name> | aliases");
+    eprintln!("{}", title.bright_cyan().bold());
+    for (syntax, description) in entries {
+        let padded = format!("{syntax:<HELP_SYNTAX_WIDTH$}");
+        eprintln!("  {}  {description}", padded.cyan().bold());
+    }
+}
+
+/// Print green examples separately from the command reference.
+fn print_help_examples(entries: &[(&str, &str)]) {
     eprintln!();
-    eprintln!("Aliases: moves = list/ls, home = back/b; quit exits.");
+    eprintln!("{}", "Examples".bright_green().bold());
+    for (syntax, description) in entries {
+        let padded = format!("{syntax:<HELP_SYNTAX_WIDTH$}");
+        eprintln!("  {}  {description}", padded.green());
+    }
+}
+
+/// Print a subdued help footer note.
+fn print_help_note(note: &str) {
+    eprintln!();
+    eprintln!("{}", format!("Tip: {note}").dimmed());
 }
 
 // ── REPL loops ──────────────────────────────────────────────────────
@@ -852,7 +947,7 @@ fn character_loop(
             "quit" | "q" | "exit" => return Ok(LoopAction::Quit),
             "home" | "back" | "b" | "new" => return Ok(LoopAction::Back),
             "help" | "?" => {
-                print_query_help();
+                print_query_help(&character.name);
                 continue;
             }
             "stats" => {

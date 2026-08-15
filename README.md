@@ -87,6 +87,12 @@ Tekken > characters       # show all characters (aliases: chars, list)
 Tekken > overview         # roster overview (alias: list-all)
 ```
 
+Type `help` or `?` at either prompt for context-specific help. The command-centre
+screen explains global lookup, frame queries, roster filters, output modifiers,
+navigation, and aliases; a selected-character screen shows character-only move
+lookup and filter syntax. Colored headings, prompts, commands, examples, and tips
+separate each part while preserving terminal column alignment.
+
 **Move queries** (filters are AND'd together):
 ```
 Jin > mid plus            # plus-on-block mids
