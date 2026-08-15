@@ -44,9 +44,9 @@ Handles everything that isn't data logic: network, display, user input, aliases.
 
 | Module | Purpose |
 |--------|---------|
-| `interactive.rs` | Command-centre and selected-character REPL contexts, direct `<character> <move>` lookup, fuzzy matching, aliases, notation normalization, global lookup, roster overview |
+| `interactive.rs` | Command-centre and selected-character contexts, direct move lookup, global/character-scoped frame-query shortcuts, fuzzy matching, aliases, notation normalization, roster overview |
 | `lean_server.rs` | `LeanServer` subprocess: start, load, query, compare, convert, quit; filter→JSON serialization |
-| `filter.rs` | Filter token parsing for Rust→JSON translation; frame comparison syntax (`<+5`, `hit>0`, `ch>=5`) |
+| `filter.rs` | Filter parsing for Rust→JSON translation; compact and spaced frame comparisons (`hit>0`, `hit +5`, `startup i15`) |
 | `fetch.rs` | GitHub API, raw CSV fetching, upstream commit checking, conversion via `LeanServer` |
 | `display.rs` | Column layout, color formatting (pad-then-colorize for ANSI alignment), per-component hit level coloring, single-move detail headers |
 | `model.rs` | `Move`, `Character` structs (deserialized from clean CSV) |

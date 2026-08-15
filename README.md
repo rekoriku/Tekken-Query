@@ -77,6 +77,10 @@ Tekken > reina df1        # look up Reina's df+1 without opening Reina
 Tekken > armor king df1   # full character names work too
 Tekken > df1              # compare df+1 across all characters
 Tekken > ewgf             # global move aliases work too
+Tekken > hit +5           # every move that is exactly +5 on hit
+Tekken > block -10        # every move that is exactly -10 on block
+Tekken > startup i15      # every move with i15 startup
+Tekken > reina hit +5     # scope the same frame query to Reina
 Tekken > all pc           # roster-wide filter query
 Tekken > all i<15 hom     # any filter expression works
 Tekken > characters       # show all characters (aliases: chars, list)
@@ -226,6 +230,12 @@ Frame comparisons support `<`, `<=`, `=`, `>=`, and `>`.
 | `ch<0`, `ch=0`, `ch>0`, `ch>=5` | Counter-hit frames |
 
 Signed values may include `+` for positive frames, so `>=3` and `>=+3` are equivalent.
+
+At the interactive `Tekken >` prompt, frame queries are roster-wide by default
+and accept natural spacing: `hit +5`, `block -10`, and `startup i15`. Prefix a
+character to scope the query, for example `reina hit +5`. Compact forms such as
+`hit=+5`, `block=-10`, and `i15` remain available. Roster output modifiers work
+without `all` too, for example `hit +5 summary` or `startup i15 by:i asc`.
 
 ### Aliases
 

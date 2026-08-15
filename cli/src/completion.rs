@@ -43,6 +43,9 @@ const ROSTER_MODIFIERS: &[&str] = &[
     "flat", "summary", "limit:", "by:i", "sort:", "order:", "asc", "desc",
 ];
 
+/// Natural frame-query prefixes accepted at the command centre.
+const FRAME_QUERY_PREFIXES: &[&str] = &["hit", "block", "ch", "startup", "i"];
+
 /// REPL helper that provides context-aware tab completion.
 pub enum ReplHelper {
     /// Top-level command-centre context.
@@ -117,9 +120,12 @@ impl Completer for ReplHelper {
                         .iter()
                         .any(|character| character.eq_ignore_ascii_case(first_word))
                 {
-                    prefix_matches(prefix, ALIAS_TERMS)
+                    let mut character_query = prefix_matches(prefix, FRAME_QUERY_PREFIXES);
+                    character_query.extend(prefix_matches(prefix, ALIAS_TERMS));
+                    character_query
                 } else {
                     let mut centre = prefix_matches(prefix, COMMAND_CENTRE_COMMANDS);
+                    centre.extend(prefix_matches(prefix, FRAME_QUERY_PREFIXES));
                     centre.extend(prefix_matches(prefix, ALIAS_TERMS));
                     centre.extend(prefix_matches_owned(prefix, characters));
                     centre

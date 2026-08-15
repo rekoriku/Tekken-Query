@@ -165,12 +165,12 @@ fn find_character<'a>(
     best.map(|(c, _)| c)
 }
 
-/// Split `<character> <move>` entered at the command centre.
+/// Split `<character> <query>` entered at the command centre.
 ///
 /// Exact character names and IDs take priority, including multi-word names.
 /// A single-token shorthand such as `kaz df1` may use normal character fuzzy
 /// resolution after exact matching fails.
-fn parse_direct_move_lookup<'input, 'manifest>(
+fn parse_character_command<'input, 'manifest>(
     input: &'input str,
     manifest: &'manifest Manifest,
 ) -> Option<(&'manifest CharacterMeta, &'input str)> {
@@ -201,6 +201,35 @@ fn parse_direct_move_lookup<'input, 'manifest>(
         return None;
     }
     find_character(selector, manifest).map(|character| (character, move_query))
+}
+
+/// Whether command-centre input is intended as a frame-data filter query.
+fn looks_like_frame_query(input: &str) -> bool {
+    let Some(first) = input.split_whitespace().next() else {
+        return false;
+    };
+    let lower = first.to_lowercase();
+
+    if matches!(lower.as_str(), "hit" | "block" | "ch" | "startup") {
+        return true;
+    }
+    if lower.starts_with('<') || lower.starts_with('=') || lower.starts_with('>') {
+        return true;
+    }
+    if let Some(rest) = lower.strip_prefix('i') {
+        return rest
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_digit() || matches!(c, '<' | '=' | '>'));
+    }
+
+    ["hit", "block", "ch"].iter().any(|prefix| {
+        lower.strip_prefix(prefix).is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_some_and(|c| matches!(c, '<' | '=' | '>'))
+        })
+    })
 }
 
 /// Load a character's moves from clean CSV.
@@ -662,6 +691,8 @@ fn print_char_help() {
     eprintln!("  {:<24} open a character", "<character>");
     eprintln!("  {:<24} look up one character's move", "<character> <move>");
     eprintln!("  {:<24} compare a move across the roster", "<move>");
+    eprintln!("  {:<24} query frames across the roster", "<frame query>");
+    eprintln!("  {:<24} query one character's frames", "<character> <frame query>");
     eprintln!("  {:<24} query the whole roster", "all <filters>");
     eprintln!();
     eprintln!("{}", "Browse".bold());
@@ -672,6 +703,9 @@ fn print_char_help() {
     eprintln!("  reina                  open Reina");
     eprintln!("  armor king df1         direct lookup using a full character name");
     eprintln!("  ewgf                   compare an alias across the roster");
+    eprintln!("  hit +5                 every move that is +5 on hit");
+    eprintln!("  reina block -10        Reina's moves that are -10 on block");
+    eprintln!("  startup i15            every i15 move");
     eprintln!("  all i<15 hom by:i asc  roster filter with sorting");
     eprintln!();
     eprintln!("{}", "Custom aliases".bold());
@@ -697,6 +731,7 @@ fn print_query_help() {
     eprintln!("  {:<32} startup frames", "i15, i=15, i<15, i>=15");
     eprintln!("  {:<32} block frames", "<0, <=-10, =0, block>=+3");
     eprintln!("  {:<32} hit / CH frames", "hit>0, hit=0, ch>=5");
+    eprintln!("  {:<32} spaced frame query", "hit +5, block -10, startup i15");
     eprintln!("  {:<32} move tags", "hom, pc, he, hs, heat, trn");
     eprintln!("  {:<32} stance moves", "stance, stance:ZEN");
     eprintln!(
@@ -993,26 +1028,62 @@ fn handle_roster_query(
     true
 }
 
-/// Handle `<character> <move>` at the command centre.
-fn handle_direct_move_lookup(
+/// Handle `<character> <move-or-frame-query>` at the command centre.
+fn handle_character_command(
+    server: &mut LeanServer,
     data_dir: &Path,
     manifest: &Manifest,
     input: &str,
     custom_aliases: &CustomAliases,
 ) -> bool {
-    let Some((meta, move_query)) = parse_direct_move_lookup(input, manifest) else {
+    let Some((meta, query)) = parse_character_command(input, manifest) else {
         return false;
     };
 
     match load_character(data_dir, meta) {
         Ok(character) => {
-            eprintln!(
-                "{} — direct move lookup for '{move_query}'",
-                character.name.bold()
-            );
-            try_move_lookup(&character, move_query, custom_aliases);
+            if looks_like_frame_query(query) {
+                if let Err(e) = server_load_character(server, data_dir, meta) {
+                    eprintln!("Failed to load {} in Lean backend: {e}", meta.id);
+                } else {
+                    eprintln!("{} — frame query for '{query}'", character.name.bold());
+                    if let Err(e) = run_query(server, &character, query) {
+                        eprintln!("{e}");
+                    }
+                }
+            } else {
+                eprintln!(
+                    "{} — direct move lookup for '{query}'",
+                    character.name.bold()
+                );
+                try_move_lookup(&character, query, custom_aliases);
+            }
         }
         Err(e) => eprintln!("Failed to load {}: {e}", meta.id),
+    }
+    true
+}
+
+/// Handle a bare frame query across the entire roster.
+fn handle_global_frame_query(
+    server: &mut LeanServer,
+    data_dir: &Path,
+    manifest: &Manifest,
+    input: &str,
+) -> bool {
+    if !looks_like_frame_query(input) {
+        return false;
+    }
+
+    match crate::roster_query::parse_interactive_options(input) {
+        Ok((options, filter_text)) => {
+            if let Err(e) =
+                crate::roster_query::run(server, data_dir, manifest, &filter_text, options)
+            {
+                eprintln!("{e}");
+            }
+        }
+        Err(e) => eprintln!("{e}"),
     }
     true
 }
@@ -1090,7 +1161,17 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
             continue;
         }
 
-        if handle_direct_move_lookup(data_dir, &manifest, &input, &custom_aliases) {
+        if handle_global_frame_query(&mut server, data_dir, &manifest, &input) {
+            continue;
+        }
+
+        if handle_character_command(
+            &mut server,
+            data_dir,
+            &manifest,
+            &input,
+            &custom_aliases,
+        ) {
             continue;
         }
 
@@ -1168,7 +1249,7 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
 mod tests {
     use crate::data::{CharacterMeta, Manifest};
 
-    use super::{find_character, parse_direct_move_lookup};
+    use super::{find_character, looks_like_frame_query, parse_character_command};
 
     fn test_manifest() -> Manifest {
         Manifest {
@@ -1205,22 +1286,34 @@ mod tests {
     }
 
     #[test]
-    fn parses_direct_character_move_lookup() {
+    fn parses_character_command_query() {
         let manifest = test_manifest();
 
-        assert!(parse_direct_move_lookup("reina df1", &manifest)
+        assert!(parse_character_command("reina df1", &manifest)
             .is_some_and(|(character, query)| character.id == "reina" && query == "df1"));
-        assert!(parse_direct_move_lookup("armor king df1", &manifest)
+        assert!(parse_character_command("armor king df1", &manifest)
             .is_some_and(|(character, query)| character.id == "armor-king" && query == "df1"));
-        assert!(parse_direct_move_lookup("kaz ewgf", &manifest)
+        assert!(parse_character_command("kaz ewgf", &manifest)
             .is_some_and(|(character, query)| character.id == "kazuya" && query == "ewgf"));
+        assert!(parse_character_command("reina hit +5", &manifest)
+            .is_some_and(|(character, query)| character.id == "reina" && query == "hit +5"));
     }
 
     #[test]
     fn character_without_move_remains_character_selection() {
         let manifest = test_manifest();
 
-        assert!(parse_direct_move_lookup("reina", &manifest).is_none());
-        assert!(parse_direct_move_lookup("armor king", &manifest).is_none());
+        assert!(parse_character_command("reina", &manifest).is_none());
+        assert!(parse_character_command("armor king", &manifest).is_none());
+    }
+
+    #[test]
+    fn recognizes_global_frame_query_forms() {
+        assert!(looks_like_frame_query("hit +5"));
+        assert!(looks_like_frame_query("block >= +5"));
+        assert!(looks_like_frame_query("startup i15"));
+        assert!(looks_like_frame_query("i<15"));
+        assert!(looks_like_frame_query("<-10"));
+        assert!(!looks_like_frame_query("df1"));
     }
 }

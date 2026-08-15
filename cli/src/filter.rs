@@ -270,16 +270,65 @@ fn parse_startup_filter(s: &str) -> Result<Vec<Filter>, CliError> {
 
 /// Parse a full filter string (space-separated tokens, AND'd together).
 pub fn parse_filters(input: &str) -> Result<Vec<Filter>, CliError> {
+    let tokens: Vec<&str> = input.split_whitespace().collect();
     let mut filters = Vec::new();
-    for token in input.split_whitespace() {
-        filters.extend(parse_filter(token)?);
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if let Some((normalized, consumed)) = parse_spaced_frame_filter(&tokens[index..]) {
+            filters.extend(parse_filter(&normalized)?);
+            index += consumed;
+        } else {
+            filters.extend(parse_filter(tokens[index])?);
+            index += 1;
+        }
     }
     Ok(filters)
 }
 
+/// Normalize a spaced frame expression such as `hit +5` or `startup >= 15`.
+fn parse_spaced_frame_filter(tokens: &[&str]) -> Option<(String, usize)> {
+    let field = *tokens.first()?;
+    if matches!(field, "hit" | "block" | "ch") {
+        let next = *tokens.get(1)?;
+        if is_compare_operator(next) {
+            let value = *tokens.get(2)?;
+            return Some((format!("{field}{next}{value}"), 3));
+        }
+        if starts_with_compare_operator(next) {
+            return Some((format!("{field}{next}"), 2));
+        }
+        return Some((format!("{field}={next}"), 2));
+    }
+
+    if field == "startup" {
+        let next = *tokens.get(1)?;
+        if is_compare_operator(next) {
+            let value = *tokens.get(2)?;
+            return Some((format!("i{next}{value}"), 3));
+        }
+        if next.starts_with('i') {
+            return Some((next.to_string(), 2));
+        }
+        return Some((format!("i{next}"), 2));
+    }
+
+    None
+}
+
+/// Whether a token is a standalone frame comparison operator.
+fn is_compare_operator(token: &str) -> bool {
+    matches!(token, "<" | "<=" | "=" | ">=" | ">")
+}
+
+/// Whether a token starts with a frame comparison operator.
+fn starts_with_compare_operator(token: &str) -> bool {
+    token.starts_with('<') || token.starts_with('=') || token.starts_with('>')
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_filters;
+    use super::{CompareOp, Filter, FrameField, parse_filters};
 
     #[test]
     fn rejects_negative_startup_frames() {
@@ -292,5 +341,41 @@ mod tests {
     fn accepts_signed_block_frames() {
         assert!(parse_filters("block>=-10").is_ok());
         assert!(parse_filters(">=+3").is_ok());
+    }
+
+    #[test]
+    fn accepts_spaced_frame_queries() {
+        assert!(matches!(
+            parse_filters("hit +5").as_deref(),
+            Ok([Filter::FrameCompare(
+                FrameField::Hit,
+                CompareOp::Eq,
+                5
+            )])
+        ));
+        assert!(matches!(
+            parse_filters("block >= +5").as_deref(),
+            Ok([Filter::FrameCompare(
+                FrameField::Block,
+                CompareOp::Ge,
+                5
+            )])
+        ));
+        assert!(matches!(
+            parse_filters("ch <=-10").as_deref(),
+            Ok([Filter::FrameCompare(
+                FrameField::CounterHit,
+                CompareOp::Le,
+                -10
+            )])
+        ));
+        assert!(matches!(
+            parse_filters("startup i15").as_deref(),
+            Ok([Filter::StartupEq(15)])
+        ));
+        assert!(matches!(
+            parse_filters("startup < 15").as_deref(),
+            Ok([Filter::StartupLt(15)])
+        ));
     }
 }
