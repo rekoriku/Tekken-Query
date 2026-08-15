@@ -720,12 +720,12 @@ fn print_char_help() {
     print_help_section(
         "Roster filter queries",
         &[
-            ("all <filters>", "Combine filters across the whole roster"),
-            ("all mid plus", "Mids that are plus on block"),
-            ("all i<15 hom", "Homing moves faster than i15"),
-            ("all low !punish", "Lows that are not punishable"),
-            ("all pc !high", "Power crushes that are not highs"),
-            ("all heat", "Heat engagers, smashes, burst, and H. moves"),
+            ("query <filters>", "Combine filters across the whole roster"),
+            ("query mid plus", "Mids that are plus on block"),
+            ("query i<15 hom", "Homing moves faster than i15"),
+            ("query low !punish", "Lows that are not punishable"),
+            ("query pc !high", "Power crushes that are not highs"),
+            ("query heat", "Heat engagers, smashes, burst, and H. moves"),
         ],
     );
     print_help_section(
@@ -745,6 +745,7 @@ fn print_char_help() {
             ("aliases", "List custom aliases"),
             ("alias <name> ...", "Create a custom alias"),
             ("unalias <name>", "Remove a custom alias"),
+            ("all / roster", "Compatibility aliases for query"),
             ("help / ?", "Show this command-centre help"),
             ("quit / q", "Exit Tekken Query"),
         ],
@@ -799,6 +800,7 @@ fn print_query_help(character_name: &str) {
     print_help_section(
         "Character commands",
         &[
+            ("query <filters>", "Run an explicit character-scoped query"),
             ("moves", "Show the full movelist (aliases: list, ls)"),
             ("stats", "Show character statistics"),
             ("home", "Return to Tekken > (aliases: back, b)"),
@@ -954,7 +956,7 @@ fn character_loop(
                 display::print_character_stats(&character.name, &character.moves);
                 continue;
             }
-            "moves" | "list" | "ls" | "all" => {
+            "moves" | "list" | "ls" => {
                 let refs: Vec<&Move> = character.moves.iter().collect();
                 eprintln!("{} — {} moves", character.name.bold(), refs.len());
                 let cols = display::layout_for(&refs);
@@ -962,6 +964,14 @@ fn character_loop(
                 for m in &refs {
                     eprintln!("{}", display::format_move_row(m, &cols));
                 }
+                continue;
+            }
+            "query" => {
+                eprintln!("usage: query <filters>");
+                continue;
+            }
+            "all" | "roster" => {
+                eprintln!("Roster queries belong at Tekken >. Use: home, then query <filters>");
                 continue;
             }
             "aliases" => {
@@ -978,6 +988,17 @@ fn character_loop(
         }
         if let Some(rest) = input.strip_prefix("unalias ") {
             handle_alias_remove(rest.trim(), custom_aliases, data_dir);
+            continue;
+        }
+
+        if let Some(rest) = input.strip_prefix("query ") {
+            if let Err(e) = run_query(server, character, rest.trim()) {
+                eprintln!("{e}");
+            }
+            continue;
+        }
+        if input.starts_with("all ") || input.starts_with("roster ") {
+            eprintln!("Roster queries belong at Tekken >. Use: home, then query <filters>");
             continue;
         }
 
@@ -1078,8 +1099,8 @@ fn handle_command_centre_command(
         "overview" | "list-all" | "la" => cmd_list_all(data_dir, manifest),
         "help" | "?" => print_char_help(),
         "aliases" => print_aliases(custom_aliases),
-        "all" | "roster" => {
-            eprintln!("usage: all <filters> [limit:N|flat|summary|by:i asc|desc]");
+        "query" | "all" | "roster" => {
+            eprintln!("usage: query <filters> [limit:N|flat|summary|by:i asc|desc]");
         }
         "alias" => eprintln!("usage: alias <name> cmd:<pattern> [name:<pattern>]"),
         "unalias" => eprintln!("usage: unalias <name>"),
@@ -1096,21 +1117,27 @@ fn handle_command_centre_command(
     true
 }
 
-/// Handle `all <filters...>` / `roster <filters...>` at the command centre.
+/// Extract filters from a command-centre roster query.
+fn roster_query_filter_text(input: &str) -> Option<&str> {
+    input
+        .strip_prefix("query ")
+        .or_else(|| input.strip_prefix("all "))
+        .or_else(|| input.strip_prefix("roster "))
+        .map(str::trim)
+}
+
+/// Handle `query <filters...>` and its compatibility aliases at the command centre.
 fn handle_roster_query(
     server: &mut LeanServer,
     data_dir: &Path,
     manifest: &Manifest,
     input: &str,
 ) -> bool {
-    let Some(rest) = input
-        .strip_prefix("all ")
-        .or_else(|| input.strip_prefix("roster "))
-    else {
+    let Some(rest) = roster_query_filter_text(input) else {
         return false;
     };
 
-    match crate::roster_query::parse_interactive_options(rest.trim()) {
+    match crate::roster_query::parse_interactive_options(rest) {
         Ok((options, filter_text)) => {
             if let Err(e) =
                 crate::roster_query::run(server, data_dir, manifest, &filter_text, options)
@@ -1344,7 +1371,10 @@ pub fn run_interactive(data_dir: &Path) -> Result<(), CliError> {
 mod tests {
     use crate::data::{CharacterMeta, Manifest};
 
-    use super::{find_character, looks_like_frame_query, parse_character_command};
+    use super::{
+        find_character, looks_like_frame_query, parse_character_command,
+        roster_query_filter_text,
+    };
 
     fn test_manifest() -> Manifest {
         Manifest {
@@ -1410,5 +1440,13 @@ mod tests {
         assert!(looks_like_frame_query("i<15"));
         assert!(looks_like_frame_query("<-10"));
         assert!(!looks_like_frame_query("df1"));
+    }
+
+    #[test]
+    fn parses_canonical_roster_query_and_compatibility_aliases() {
+        assert_eq!(roster_query_filter_text("query mid plus"), Some("mid plus"));
+        assert_eq!(roster_query_filter_text("all pc"), Some("pc"));
+        assert_eq!(roster_query_filter_text("roster heat"), Some("heat"));
+        assert_eq!(roster_query_filter_text("query"), None);
     }
 }

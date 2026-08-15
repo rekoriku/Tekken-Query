@@ -1,6 +1,6 @@
 /// Roster-wide filter queries.
 ///
-/// This keeps `all <filters...>` on the same parser/evaluator path as
+/// This keeps roster-wide queries on the same parser/evaluator path as
 /// character queries, so math-style filters behave consistently everywhere.
 use std::path::Path;
 
@@ -79,7 +79,7 @@ impl Default for RosterQueryOptions {
 /// Parse output modifier tokens and return the remaining filter text.
 ///
 /// Compact tokens keep the syntax aligned with the existing filter language:
-/// `all pc limit:0`, `all pc by:i asc`, `all heat summary`.
+/// `query pc limit:0`, `query pc by:i asc`, `query heat summary`.
 pub fn parse_inline_options(input: &str) -> Result<(RosterQueryOptions, String), CliError> {
     let mut options = RosterQueryOptions::default();
     let mut filters = Vec::new();
@@ -235,7 +235,7 @@ pub fn run(
     let filters = parse_filters(filter_text)?;
     if filters.is_empty() {
         return Err(CliError::InvalidFilter(
-            "all requires at least one filter".into(),
+            "roster query requires at least one filter".into(),
         ));
     }
 

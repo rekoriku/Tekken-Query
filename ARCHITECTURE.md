@@ -88,6 +88,10 @@ Supported logical surface today:
 - substring filters: `cmd:`, `name:`, `note:`
 - roster output modifiers: `by:i asc`, `by:i desc`, `limit:N`, `flat`, `summary`
 
+At the interactive command centre, `query <filters>` is the canonical explicit
+roster-query form. `all` and `roster` remain compatibility aliases; bare frame
+queries such as `hit +5` are roster-wide without an explicit command.
+
 Important limitation: Lean already has `Filter.and`, `Filter.or`, and `Filter.not`, but the Rust parser currently exposes only implicit AND plus unary NOT. There is no user-facing OR, grouping, or exact command operator yet. `cmd:` is substring matching, so `!cmd:2+3` excludes every command containing `2+3`.
 
 ## Data Directory Layout

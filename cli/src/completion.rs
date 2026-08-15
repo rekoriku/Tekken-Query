@@ -34,11 +34,11 @@ const ALIAS_TERMS: &[&str] = &[
 
 /// Commands available from the top-level command centre.
 const COMMAND_CENTRE_COMMANDS: &[&str] = &[
-    "characters", "chars", "list", "overview", "list-all", "all",
+    "characters", "chars", "list", "overview", "list-all", "query",
     "aliases", "alias", "unalias", "help", "quit",
 ];
 
-/// Presentation modifiers accepted after `all <filters>`.
+/// Presentation modifiers accepted after a roster query.
 const ROSTER_MODIFIERS: &[&str] = &[
     "flat", "summary", "limit:", "by:i", "sort:", "order:", "asc", "desc",
 ];
@@ -111,7 +111,9 @@ impl Completer for ReplHelper {
         let matches = match self {
             Self::CommandCentre { characters } => {
                 let first_word = line_to_cursor.split_whitespace().next().unwrap_or("");
-                let mut results = if word_start > 0 && first_word == "all" {
+                let mut results = if word_start > 0
+                    && matches!(first_word, "query" | "all" | "roster")
+                {
                     let mut roster = prefix_matches(prefix, FILTER_TOKENS);
                     roster.extend(prefix_matches(prefix, ROSTER_MODIFIERS));
                     roster
@@ -138,8 +140,10 @@ impl Completer for ReplHelper {
                 move_commands,
                 stances,
             } => {
-                let mut results =
-                    prefix_matches(prefix, &["moves", "list", "stats", "home", "back", "help", "quit"]);
+                let mut results = prefix_matches(
+                    prefix,
+                    &["query", "moves", "list", "stats", "home", "back", "help", "quit"],
+                );
                 results.extend(prefix_matches(prefix, FILTER_TOKENS));
                 results.extend(prefix_matches(prefix, ALIAS_TERMS));
                 results.extend(prefix_matches_owned(prefix, move_commands));

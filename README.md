@@ -81,8 +81,8 @@ Tekken > hit +5           # every move that is exactly +5 on hit
 Tekken > block -10        # every move that is exactly -10 on block
 Tekken > startup i15      # every move with i15 startup
 Tekken > reina hit +5     # scope the same frame query to Reina
-Tekken > all pc           # roster-wide filter query
-Tekken > all i<15 hom     # any filter expression works
+Tekken > query pc         # roster-wide filter query
+Tekken > query i<15 hom   # any filter expression works
 Tekken > characters       # show all characters (aliases: chars, list)
 Tekken > overview         # roster overview (alias: list-all)
 ```
@@ -93,9 +93,13 @@ navigation, and aliases; a selected-character screen shows character-only move
 lookup and filter syntax. Colored headings, prompts, commands, examples, and tips
 separate each part while preserving terminal column alignment.
 
+`query` is the canonical interactive command for roster-wide filters. The older
+`all` and `roster` spellings remain accepted as compatibility aliases.
+
 **Move queries** (filters are AND'd together):
 ```
 Jin > mid plus            # plus-on-block mids
+Jin > query mid plus      # explicit form of the same scoped query
 Jin > i<15 hom            # fast homing moves
 Jin > low !punish         # safe lows
 Jin > heat                # all heat moves (engager + smash + burst + H. state)
@@ -178,9 +182,9 @@ CLI flags are also available for scripting: `--limit 0`, `--flat`, `--summary`, 
 In interactive mode, use modifier tokens, not shell quotes:
 
 ```text
-Tekken > all pc !cmd:2+3 by:i asc
-Tekken > all mid limit:3
-Tekken > all heat summary
+Tekken > query pc !cmd:2+3 by:i asc
+Tekken > query mid limit:3
+Tekken > query heat summary
 ```
 
 Shell quoting is only needed in your terminal when the shell would otherwise interpret a token, for example:
@@ -241,7 +245,7 @@ At the interactive `Tekken >` prompt, frame queries are roster-wide by default
 and accept natural spacing: `hit +5`, `block -10`, and `startup i15`. Prefix a
 character to scope the query, for example `reina hit +5`. Compact forms such as
 `hit=+5`, `block=-10`, and `i15` remain available. Roster output modifiers work
-without `all` too, for example `hit +5 summary` or `startup i15 by:i asc`.
+without `query` too, for example `hit +5 summary` or `startup i15 by:i asc`.
 
 ### Aliases
 
