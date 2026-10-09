@@ -44,7 +44,7 @@ The frame parsers (`Frame.lean`) prove, for all inputs:
 - `parseNatFromChars_append` — a digit run parses to its decimal value and the rest is kept
 - `parseSignedValue_nonneg` / `parseSignedValue_nonpos` / `parseSignedValue_minus_eq_neg_plus` / `parseSignedValue_zero` — sign correctness, including `-0` = `+0` = 0
 - `parseSignedValue_renderSignedValue`, `parseBlockFrame_renderSignedValue`, `parseBlockFrame_range_renderSignedValue` — values rendered as `+N` / `-N` / `0` (with an optional `g`, or as an `A~B` range) parse back exactly
-- `parseStartupFrame_range_toString` — the `i{start}~{end}` form rebuilt from clean CSVs parses back exactly
+- `parseStartupFrame_range` / `parseStartupFrame_range_toString` — every startup range spelling in the data (`~` or `-` between, optional `i`/`I` before either number) parses to the same start and end; the `i{start}~{end}` form rebuilt from clean CSVs parses back exactly
 - `parseBlockFrame_guardable` / `hasGuardSuffix_stop` — the guard flag is decided by the lowercase suffix attached to the leading number; nothing after a space, `(`, `/`, `~` or uppercase stance name affects it
 - `parseStartupFrame_first_hit` — text after the first comma or whitespace (later hits) never changes the startup result
 - `activeFrames_ge_one` / `activeFrames_of_le` / `activeFrames_of_lt` — active-frame counts, including the current fallback to 1 when a range ends before it starts

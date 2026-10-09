@@ -135,31 +135,45 @@ def hasGuardSuffix (remaining : List Char) : Bool :=
   (attachedSuffix remaining).contains 'g'
 
 /--
+  Drop one optional impact-frame prefix 'i' or 'I' ("i13" → "13").
+-/
+def dropImpactPrefix : List Char → List Char
+  | c :: rest => if c == 'i' || c == 'I' then rest else c :: rest
+  | [] => []
+
+/--
   The first hit's startup token: leading whitespace and one 'i'/'I' prefix
   removed, cut at the first comma or whitespace (multi-hit separators).
   Raw data uses spaces between per-hit startups: "i13 i32~75" → "13".
 -/
 def startupToken (chars : List Char) : List Char :=
-  let chars := chars.dropWhile Char.isWhitespace
-  let chars := match chars with
-    | c :: rest => if c == 'i' || c == 'I' then rest else c :: rest
-    | [] => []
-  chars.takeWhile (fun c => c != ',' && !c.isWhitespace)
+  (dropImpactPrefix (chars.dropWhile Char.isWhitespace)).takeWhile
+    (fun c => c != ',' && !c.isWhitespace)
+
+/--
+  Startup range separators. '~' is the canonical form; '-' is hand-typed in
+  the data ("i13-14", Lee df+4). Startup frames are never negative, so a '-'
+  inside a startup value can only separate a range.
+-/
+def isRangeSep (c : Char) : Bool :=
+  c == '~' || c == '-'
 
 /--
   Parse a startup frame string into structured data.
-  "i13"    → some { startup := 13 }
-  "i12~13" → some { startup := 12, activeEnd := some 13 }
+  "i13"     → some { startup := 13 }
+  "i12~13"  → some { startup := 12, activeEnd := some 13 }
   "i10,i12" → some { startup := 10 } (comma = multi-hit, take first)
+  The range end may be written "~N", "-N", "~iN" or "-iN": the separator is
+  '~' or '-', and the end may repeat the impact-frame prefix 'i'/'I'
+  ("i15-i16" → { startup := 15, activeEnd := some 16 }).
 -/
 def parseStartupFrame (s : String) : Option StartupData :=
   let chars := startupToken s.toList
-  -- Split on tilde for active frame range
-  let beforeTilde := chars.takeWhile (fun c => c != '~')
-  let afterTilde := (chars.dropWhile (fun c => c != '~')).drop 1
-  match parseNatFromChars beforeTilde with
+  let beforeSep := chars.takeWhile (fun c => !isRangeSep c)
+  let afterSep := dropImpactPrefix ((chars.dropWhile (fun c => !isRangeSep c)).drop 1)
+  match parseNatFromChars beforeSep with
   | some (n, _) =>
-    let activeEnd := match parseNatFromChars afterTilde with
+    let activeEnd := match parseNatFromChars afterSep with
       | some (m, _) => some m
       | none => none
     some { startup := n, activeEnd := activeEnd }
@@ -694,7 +708,7 @@ theorem startupToken_first_hit (first rest : List Char) (sep : Char) (hne : firs
     have hxs : ∀ c ∈ xs, (c != ',' && !c.isWhitespace) = true :=
       fun c hc => hfirst c (by simp [hc])
     simp only [startupToken, List.cons_append, List.dropWhile_cons, hxw, Bool.false_eq_true,
-      if_false]
+      if_false, dropImpactPrefix]
     by_cases hi : (x == 'i' || x == 'I') = true
     · simp only [hi, if_true]
       rw [List.takeWhile_append_of_pos hxs, List.takeWhile_cons, if_neg (by simp [hsep])]
@@ -713,6 +727,91 @@ theorem parseStartupFrame_first_hit (first rest : List Char) (sep : Char) (hne :
   simp only [parseStartupFrame, String.toList_ofList,
     startupToken_first_hit first rest sep hne hfirst hsep]
 
+/-- An optional impact-frame prefix: none, 'i' or 'I'. -/
+def IsImpactPrefix (p : List Char) : Prop :=
+  p = [] ∨ p = ['i'] ∨ p = ['I']
+
+/-- Digits are not the impact-frame prefix. -/
+theorem not_impact_of_isDigit {c : Char} (h : isDigit c = true) :
+    (c == 'i' || c == 'I') = false := by
+  have hi : c ≠ 'i' := by intro hc; subst hc; simp [isDigit] at h
+  have hI : c ≠ 'I' := by intro hc; subst hc; simp [isDigit] at h
+  simp [hi, hI]
+
+/-- Digits are not range separators. -/
+theorem not_rangeSep_of_isDigit {c : Char} (h : isDigit c = true) : isRangeSep c = false := by
+  have ht : c ≠ '~' := ne_tilde_of_isDigit h
+  have hm : c ≠ '-' := by intro hc; subst hc; simp [isDigit] at h
+  simp [isRangeSep, ht, hm]
+
+/-- An optional prefix in front of a digit run is dropped; the digits stay. -/
+theorem dropImpactPrefix_append (p ds rest : List Char) (hp : IsImpactPrefix p)
+    (hne : ds ≠ []) (hds : ∀ c ∈ ds, isDigit c = true) :
+    dropImpactPrefix (p ++ (ds ++ rest)) = ds ++ rest := by
+  rcases hp with rfl | rfl | rfl
+  · cases ds with
+    | nil => exact absurd rfl hne
+    | cons d ds => simp [dropImpactPrefix, not_impact_of_isDigit (hds d (by simp))]
+  · simp [dropImpactPrefix]
+  · simp [dropImpactPrefix]
+
+/-- `parseStartupFrame` only looks at the characters of its input. -/
+theorem parseStartupFrame_congr {s t : String} (h : s.toList = t.toList) :
+    parseStartupFrame s = parseStartupFrame t := by
+  simp only [parseStartupFrame, h]
+
+/--
+  Every spelling of a startup range in the data parses the same: an optional
+  'i'/'I' before the start, '~' or '-' between, and an optional 'i'/'I'
+  before the end. "i13~14", "i13-14", "i13~i14", "i13-i14" and "13-14" all
+  give start 13 and end 14.
+-/
+theorem parseStartupFrame_range (a b : Nat) (p₁ p₂ : List Char) (sep : Char)
+    (hp₁ : IsImpactPrefix p₁) (hp₂ : IsImpactPrefix p₂) (hsep : isRangeSep sep = true) :
+    parseStartupFrame
+        (String.ofList (p₁ ++ ((toString a).toList ++ sep :: (p₂ ++ (toString b).toList)))) =
+      some { startup := a, activeEnd := some b } := by
+  obtain ⟨hnea, hda, -⟩ := toString_digits a
+  obtain ⟨hneb, hdb, -⟩ := toString_digits b
+  -- The input starts with a prefix letter or a digit, never whitespace.
+  have hdrop : (p₁ ++ ((toString a).toList ++ sep :: (p₂ ++ (toString b).toList))).dropWhile
+      Char.isWhitespace = p₁ ++ ((toString a).toList ++ sep :: (p₂ ++ (toString b).toList)) := by
+    cases h : (toString a).toList with
+    | nil => exact absurd h hnea
+    | cons d ds =>
+      have hd := isWhitespace_of_isDigit (hda d (by simp [h]))
+      rcases hp₁ with rfl | rfl | rfl <;> simp [hd] <;> decide
+  have hsepc : sep = '~' ∨ sep = '-' := by simpa [isRangeSep] using hsep
+  have hp₂c : ∀ c ∈ p₂, c = 'i' ∨ c = 'I' := by
+    rcases hp₂ with rfl | rfl | rfl <;> simp
+  -- Every character is a digit, the separator or a prefix letter.
+  have htok : ∀ c ∈ (toString a).toList ++ sep :: (p₂ ++ (toString b).toList),
+      (c != ',' && !c.isWhitespace) = true := by
+    intro c hc
+    simp only [List.mem_append, List.mem_cons] at hc
+    rcases hc with hc | hc | hc | hc
+    · exact startupChar_of_isDigit (hda c hc)
+    · subst hc; rcases hsepc with rfl | rfl <;> decide
+    · rcases hp₂c c hc with rfl | rfl <;> decide
+    · exact startupChar_of_isDigit (hdb c hc)
+  have htw : ((toString a).toList ++ sep :: (p₂ ++ (toString b).toList)).takeWhile
+      (fun c => c != ',' && !c.isWhitespace) =
+      (toString a).toList ++ sep :: (p₂ ++ (toString b).toList) := by
+    simpa using List.takeWhile_append_of_pos (l₂ := []) htok
+  have hns : ∀ c ∈ (toString a).toList, (!isRangeSep c) = true :=
+    fun c hc => by simp [not_rangeSep_of_isDigit (hda c hc)]
+  have hnil : ∀ c ∈ ([] : List Char).head?, isDigit c = false := by simp
+  have ha := parseNatFromChars_toString a [] hnil
+  have hb := parseNatFromChars_toString b [] hnil
+  rw [List.append_nil] at ha hb
+  have hend : dropImpactPrefix (p₂ ++ (toString b).toList) = (toString b).toList := by
+    simpa using dropImpactPrefix_append p₂ (toString b).toList [] hp₂ hneb hdb
+  simp only [parseStartupFrame, startupToken, String.toList_ofList, hdrop,
+    dropImpactPrefix_append p₁ _ _ hp₁ hnea hda, htw, List.takeWhile_append_of_pos hns,
+    List.dropWhile_append_of_pos hns, List.takeWhile_cons, List.dropWhile_cons, hsep,
+    Bool.not_true, Bool.false_eq_true, if_false, List.append_nil, List.drop_succ_cons,
+    List.drop_zero, hend, ha, hb]
+
 /--
   Startup round trip for the clean CSV export, which stores `toString` of
   the start and end frames and rebuilds "i{start}~{end}" when loading.
@@ -720,36 +819,11 @@ theorem parseStartupFrame_first_hit (first rest : List Char) (sep : Char) (hne :
 theorem parseStartupFrame_range_toString (a b : Nat) :
     parseStartupFrame ("i" ++ toString a ++ "~" ++ toString b) =
       some { startup := a, activeEnd := some b } := by
-  obtain ⟨-, hda, -⟩ := toString_digits a
-  obtain ⟨-, hdb, -⟩ := toString_digits b
-  have hstr : ("i" ++ toString a ++ "~" ++ toString b).toList =
-      'i' :: ((toString a).toList ++ '~' :: (toString b).toList) := by
-    simp only [String.toList_append, List.append_assoc]
+  rw [parseStartupFrame_congr (t := String.ofList
+    (['i'] ++ ((toString a).toList ++ '~' :: ([] ++ (toString b).toList))))]
+  · exact parseStartupFrame_range a b ['i'] [] '~' (Or.inr (Or.inl rfl)) (Or.inl rfl) rfl
+  · simp only [String.toList_append, String.toList_ofList, List.nil_append, List.append_assoc]
     rfl
-  have htok : ∀ c ∈ (toString a).toList ++ '~' :: (toString b).toList,
-      (c != ',' && !c.isWhitespace) = true := by
-    intro c hc
-    simp only [List.mem_append, List.mem_cons] at hc
-    rcases hc with hc | hc | hc
-    · exact startupChar_of_isDigit (hda c hc)
-    · subst hc; decide
-    · exact startupChar_of_isDigit (hdb c hc)
-  have hnt : ∀ c ∈ (toString a).toList, (c != '~') = true :=
-    fun c hc => by simpa using ne_tilde_of_isDigit (hda c hc)
-  have hnil : ∀ c ∈ ([] : List Char).head?, isDigit c = false := by simp
-  have ha := parseNatFromChars_toString a [] hnil
-  have hb := parseNatFromChars_toString b [] hnil
-  rw [List.append_nil] at ha hb
-  have hi : ('i'.isWhitespace) = false := by decide
-  have htw : ((toString a).toList ++ '~' :: (toString b).toList).takeWhile
-      (fun c => c != ',' && !c.isWhitespace) =
-      (toString a).toList ++ '~' :: (toString b).toList := by
-    simpa using List.takeWhile_append_of_pos (l₂ := []) htok
-  simp only [parseStartupFrame, startupToken, hstr, List.dropWhile_cons, hi,
-    Bool.false_eq_true, if_false]
-  rw [if_pos (by decide), htw, List.takeWhile_append_of_pos hnt,
-    List.dropWhile_append_of_pos hnt]
-  simp [ha, hb]
 
 /--
   Active frames are always ≥ 1 when computable (range is present).
@@ -912,6 +986,31 @@ theorem activeFrames_end_before_start :
 -/
 theorem parseStartupFrame_leading_comma :
     parseStartupFrame ",i14~15" = none := by
+  rfl
+
+/--
+  Hand-typed range spellings from real data: '-' instead of '~' (Lee df+4
+  "i13-14", Clive qcf+1 "i20-31") and a repeated impact prefix on the end
+  (Asuka f+3 "i31~i33", Lars/Reina uf+2 "i15-i16").
+-/
+theorem parseStartupFrame_dash_range :
+    parseStartupFrame "i13-14" = some { startup := 13, activeEnd := some 14 } := by
+  rfl
+
+theorem parseStartupFrame_dash_range_long :
+    parseStartupFrame "i20-31" = some { startup := 20, activeEnd := some 31 } := by
+  rfl
+
+theorem parseStartupFrame_tilde_impact_end :
+    parseStartupFrame "i31~i33" = some { startup := 31, activeEnd := some 33 } := by
+  rfl
+
+theorem parseStartupFrame_dash_impact_end :
+    parseStartupFrame "i15-i16" = some { startup := 15, activeEnd := some 16 } := by
+  rfl
+
+theorem parseStartupFrame_dash_range_multi_hit :
+    parseStartupFrame "i13-14, i22-23" = some { startup := 13, activeEnd := some 14 } := by
   rfl
 
 end TekkenQuery.Frame
