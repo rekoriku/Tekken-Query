@@ -99,7 +99,8 @@ fi
 
 if [ "$BUILD_LEAN" = true ]; then
   echo "=== Lean checks ==="
-  if grep -rn 'sorry\|unsafe\|partial\|implemented_by\|native_decide' --include='*.lean' .; then
+  if grep -rn --exclude-dir=.lake --exclude-dir=trash \
+      'sorry\|unsafe\|partial\|implemented_by\|native_decide' --include='*.lean' .; then
     echo "FAIL: banned constructs found in Lean code"
     exit 1
   else
