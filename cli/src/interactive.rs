@@ -755,6 +755,7 @@ fn print_char_help() {
         ],
     );
     print_help_note("Open a character to get help for character-only filters and commands.");
+    print_help_note(ISSUE_MARKER_NOTE);
 }
 
 /// Print help for a selected character.
@@ -817,6 +818,7 @@ fn print_query_help(character_name: &str) {
         ],
     );
     print_help_note("Use home before a roster-wide lookup, or prefix the query at Tekken >.");
+    print_help_note(ISSUE_MARKER_NOTE);
 }
 
 const HELP_SYNTAX_WIDTH: usize = 34;
@@ -849,6 +851,10 @@ fn print_help_examples(entries: &[(&str, &str)]) {
 }
 
 /// Print a subdued help footer note.
+/// Help note explaining the abnormal-source-data marker in move tables.
+const ISSUE_MARKER_NOTE: &str = "A value ending in ? (black on yellow) is abnormal source data, \
+     shown uncorrected; the lines under the table explain it. `broken` lists them all.";
+
 fn print_help_note(note: &str) {
     eprintln!();
     eprintln!("{}", format!("Tip: {note}").dimmed());
