@@ -11,7 +11,7 @@ use rustyline::Helper;
 /// All known filter tokens for tab completion.
 const FILTER_TOKENS: &[&str] = &[
     "high", "mid", "low", "throw",
-    "plus", "minus", "punish", "guardable",
+    "plus", "minus", "punish", "guardable", "broken",
     "he", "hs", "hb", "heat", "pc", "hom", "trn", "spk",
     "js", "cs", "elb", "kne", "hed", "wpn",
     "bbr", "wbr", "fbr", "rbr", "chp",
@@ -34,7 +34,7 @@ const ALIAS_TERMS: &[&str] = &[
 
 /// Commands available from the top-level command centre.
 const COMMAND_CENTRE_COMMANDS: &[&str] = &[
-    "characters", "chars", "list", "overview", "list-all", "query",
+    "characters", "chars", "list", "overview", "list-all", "query", "broken",
     "aliases", "alias", "unalias", "clear", "help", "quit",
 ];
 

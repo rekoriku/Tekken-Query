@@ -83,6 +83,7 @@ def parseFilterJson (j : Json) (fuel : Nat) : Except String Filter :=
     | "negative" => return .negative
     | "punishable" => return .punishable
     | "guardable" => return .guardable
+    | "frameIssue" => return .frameIssue
     | "blockFrameBetween" => do
       let lo ← j.getObjValAs? Int "lo"
       let hi ← j.getObjValAs? Int "hi"

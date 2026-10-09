@@ -73,6 +73,13 @@ impl RosterSort {
     }
 }
 
+/// Filter keyword selecting moves with abnormal source frame data.
+pub const BROKEN_FILTER: &str = "broken";
+
+/// Command-centre query text for the `broken` command: every flagged move
+/// across the roster in one table.
+pub const BROKEN_QUERY: &str = "broken flat limit:0";
+
 /// Output options for roster-wide queries.
 #[derive(Debug, Clone, Copy)]
 pub struct RosterQueryOptions {

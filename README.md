@@ -33,6 +33,8 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
 - Startup ranges written by hand as `i13-14` or `i15-i16` (instead of
   `i13~14`) now keep their end frame and active-frame count, for example
   Lee's `df+4`.
+- `broken` (filter, command-centre command and `tekken-cli broken`) lists
+  every move with abnormal source frame data.
 - Frame values that cannot be explained (a startup range ending before it
   starts, a doubled sign such as `--3`, unknown text) are flagged as
   abnormal source data instead of being guessed; clean CSVs gain a
@@ -116,6 +118,7 @@ Tekken > query pc         # roster-wide filter query
 Tekken > query i<15 hom   # any filter expression works
 Tekken > characters       # show all characters (aliases: chars, list)
 Tekken > overview         # roster overview (alias: list-all)
+Tekken > broken           # every move with abnormal source frame data
 Tekken > clear            # clear visible terminal output
 ```
 
@@ -163,6 +166,7 @@ One-shot commands for scripting or quick lookups without entering the REPL. None
 tekken-cli interactive          # launch the REPL (alias: i)
 tekken-cli query <char> <filters...>              # one-shot filter query
 tekken-cli all <filters...>                       # roster-wide filter query
+tekken-cli broken               # every move with abnormal source frame data
 tekken-cli move <char> <command>                  # look up a specific move
 tekken-cli compare <char1> <char2> <filters...>   # side-by-side comparison (CLI only)
 tekken-cli chars                # list all characters
@@ -239,6 +243,7 @@ tekken-cli all pc '!cmd:2+3' by:i asc
 | `minus` | Negative but safe (-1 to -9) |
 | `punish` | Punishable (<= -10) |
 | `guardable` | Opponent can still guard on block: the leading block value has an attached `g` suffix (`+15g`, `+7cg`) |
+| `broken` | Abnormal source frame data Lean cannot explain (likely wiki typos, e.g. startup `i25~16`, block `--3`); shown with a `?` marker and not corrected |
 | `i15`, `i=15`, `i<15`, `i<=15`, `i>15`, `i>=15` | Startup frame comparisons |
 | `<+5`, `>-10`, `<=0`, `>=+3`, `=-10` | Block frame comparisons |
 | `block<+5`, `block=-10` | Explicit block frame comparison |

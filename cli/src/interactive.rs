@@ -728,6 +728,7 @@ fn print_char_help() {
             ("query low !punish", "Lows that are not punishable"),
             ("query pc !high", "Power crushes that are not highs"),
             ("query heat", "Heat engagers, smashes, burst, and H. moves"),
+            ("broken", "Every move with abnormal source frame data (likely wiki typos)"),
         ],
     );
     print_help_section(
@@ -780,6 +781,7 @@ fn print_query_help(character_name: &str) {
             ("i15 / i<15 / i>=15", "Startup frame comparisons"),
             ("hom / pc / he / hs / heat / trn", "Move properties"),
             ("stance / stance:ZEN", "Any stance / a specific stance"),
+            ("broken", "Abnormal source frame data (likely wiki typos)"),
             ("cmd: / name: / note:", "Substring searches"),
             ("!<filter>", "Negate any filter, for example !punish"),
         ],
@@ -1136,8 +1138,12 @@ fn handle_command_centre_command(
     true
 }
 
-/// Extract filters from a command-centre roster query.
+/// Extract filters from a command-centre roster query. `broken` lists every
+/// move with abnormal source frame data.
 fn roster_query_filter_text(input: &str) -> Option<&str> {
+    if input == crate::roster_query::BROKEN_FILTER {
+        return Some(crate::roster_query::BROKEN_QUERY);
+    }
     input
         .strip_prefix("query ")
         .or_else(|| input.strip_prefix("all "))
@@ -1485,5 +1491,7 @@ mod tests {
         assert_eq!(roster_query_filter_text("all pc"), Some("pc"));
         assert_eq!(roster_query_filter_text("roster heat"), Some("heat"));
         assert_eq!(roster_query_filter_text("query"), None);
+        assert_eq!(roster_query_filter_text("broken"), Some("broken flat limit:0"));
+        assert_eq!(roster_query_filter_text("query broken"), Some("broken"));
     }
 }

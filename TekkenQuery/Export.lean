@@ -128,6 +128,13 @@ def TekkenMove.frameIssuesField (m : TekkenMove) : String :=
   | none => renderFrameIssues m.frameIssueList
 
 /--
+  Whether a move has abnormal source frame data: its exported
+  `frame_issues` field is non-empty.
+-/
+def TekkenMove.hasFrameIssues (m : TekkenMove) : Bool :=
+  !m.frameIssuesField.isEmpty
+
+/--
   Convert a TekkenMove to a clean CSV row.
   All fields are normalized, trimmed, and single-line.
 -/

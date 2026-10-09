@@ -295,6 +295,7 @@ fn filter_to_json(filter: &Filter) -> Value {
         Filter::Negative => serde_json::json!({"filter": "negative"}),
         Filter::Punishable => serde_json::json!({"filter": "punishable"}),
         Filter::Guardable => serde_json::json!({"filter": "guardable"}),
+        Filter::FrameIssue => serde_json::json!({"filter": "frameIssue"}),
         Filter::StartupLt(n) => {
             serde_json::json!({"filter": "startupLt", "value": n})
         }
@@ -514,6 +515,11 @@ mod tests {
     use crate::filter::{CompareOp, Filter, FrameField};
 
     use super::{filter_to_json, get_result, parse_moves_array, parse_query_result};
+
+    #[test]
+    fn serializes_frame_issue_filter() {
+        assert_eq!(filter_to_json(&Filter::FrameIssue), json!({"filter": "frameIssue"}));
+    }
 
     #[test]
     fn serializes_negated_frame_filter() {

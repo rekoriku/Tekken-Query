@@ -7,6 +7,7 @@
 -/
 import TekkenQuery.Frame
 import TekkenQuery.Models
+import TekkenQuery.Export
 
 namespace TekkenQuery
 
@@ -118,6 +119,8 @@ inductive Filter where
   -- Text search
   | nameContains (query : String)       -- name substring match
   | commandContains (query : String)    -- command substring match
+  -- Source data quality
+  | frameIssue                          -- abnormal source frame data (Frame.FrameIssue)
   | hitLevelContains (query : String)   -- hit level substring match (for compound levels)
   -- Heat-state moves
   | isHeatMove                         -- heat engager/smash/burst OR command starts with "H."
@@ -225,6 +228,7 @@ def Filter.eval (f : Filter) (m : TekkenMove) : Bool :=
   | .isHeatMove =>
     hasAnyProperty m.properties [.heatEngager, .heatSmash, .heatBurst]
     || m.command.startsWith "H."
+  | .frameIssue => m.hasFrameIssues
   | .not inner => !inner.eval m
   | .and f g => f.eval m && g.eval m
   | .or f g => f.eval m || g.eval m
@@ -375,5 +379,27 @@ theorem compareOp_lt_implies_le (a b : Int)
     (h : CompareOp.eval .lt a b = true) :
     CompareOp.eval .le a b = true := by
   simp [CompareOp.eval] at *; omega
+
+/--
+  `frameIssue` selects a move loaded from a clean CSV exactly when its
+  stored `frame_issues` text is non-empty.
+-/
+theorem frameIssue_fromCleanRecord (rec : List (String × Option String)) (text : String)
+    (h : lookupField rec "frame_issues" = some text) :
+    Filter.eval .frameIssue (TekkenMove.fromCleanRecord rec) = !text.isEmpty := by
+  simp [Filter.eval, TekkenMove.hasFrameIssues, frameIssuesField_fromCleanRecord rec text h]
+
+/-- Regression: an inverted startup range (Miary Zo uf+3+4) is selected. -/
+theorem frameIssue_inverted_startup :
+    Filter.eval .frameIssue ({ command := "uf+3+4", startupFrame := some "i25~16" } : TekkenMove)
+      = true := by
+  decide
+
+/-- Regression: ordinary frame data is not selected. -/
+theorem frameIssue_ordinary :
+    Filter.eval .frameIssue
+      ({ command := "df+4", startupFrame := some "i13-14", blockFrame := some "-9",
+         hitFrame := some "+5" } : TekkenMove) = false := by
+  decide
 
 end TekkenQuery

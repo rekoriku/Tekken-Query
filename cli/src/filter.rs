@@ -43,6 +43,8 @@ pub enum Filter {
     Punishable,
     /// Block frame is guardable (g suffix).
     Guardable,
+    /// Abnormal source frame data flagged by Lean (likely a wiki typo).
+    FrameIssue,
     /// Startup faster than N frames.
     StartupLt(i64),
     /// Startup at most N frames.
@@ -80,6 +82,7 @@ pub enum Filter {
 ///   `throw`                    — is throw
 ///   `plus`, `minus`, `punish`  — block frame categories
 ///   `guard`/`guardable`        — guardable block frame
+///   `broken`                   — abnormal source frame data (Lean `FrameIssue`)
 ///   `i15`, `i<15`, `i>15`, `i<=15`, `i>=15` — startup filters
 ///   `he`, `hs`, `hb`, `pc`, `hom`, `trn`, etc. — tag codes
 ///   `active3+`                 — active frames >= 3
@@ -109,6 +112,7 @@ pub fn parse_filter(token: &str) -> Result<Vec<Filter>, CliError> {
         "minus" | "negative" | "neg" => Ok(vec![Filter::Negative]),
         "punish" | "punishable" => Ok(vec![Filter::Punishable]),
         "guard" | "guardable" => Ok(vec![Filter::Guardable]),
+        "broken" => Ok(vec![Filter::FrameIssue]),
         "stance" => Ok(vec![Filter::HasStance]),
         // Tag codes
         "he" | "heatengager" => Ok(vec![Filter::Tag("he".into())]),
@@ -335,6 +339,18 @@ mod tests {
         assert!(parse_filters("i=-1").is_err());
         assert!(parse_filters("i<-1").is_err());
         assert!(parse_filters("active-1").is_err());
+    }
+
+    #[test]
+    fn parses_broken_keyword() {
+        assert!(matches!(
+            parse_filters("broken").as_deref(),
+            Ok([Filter::FrameIssue])
+        ));
+        assert!(matches!(
+            parse_filters("!broken").as_deref(),
+            Ok([Filter::Not(inner)]) if matches!(**inner, Filter::FrameIssue)
+        ));
     }
 
     #[test]

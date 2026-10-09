@@ -102,6 +102,10 @@ enum Command {
         filters: Vec<String>,
     },
 
+    /// List every move whose source frame data Lean flags as abnormal
+    /// (likely typos in the source wiki), across the whole roster.
+    Broken,
+
     /// Interactive REPL with auto-update on startup.
     #[command(name = "interactive", alias = "i")]
     Interactive,
@@ -144,6 +148,15 @@ fn run() -> Result<(), CliError> {
             sort.as_deref(),
             order.as_deref(),
             filters,
+        ),
+        Command::Broken => cmd_all(
+            &cli.data_dir,
+            Some(0),
+            true,
+            false,
+            None,
+            None,
+            &[roster_query::BROKEN_FILTER.to_string()],
         ),
         Command::Interactive => interactive::run_interactive(&cli.data_dir),
         Command::Fetch => cmd_fetch(&cli.data_dir),
