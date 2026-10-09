@@ -24,26 +24,22 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
   <br><em>Full roster with move counts</em>
 </p>
 
-## Unreleased
+## What's new in v0.1.5
 
+- `broken` (filter, command-centre command and `tekken-cli broken`) lists
+  every move with abnormal source frame data; frame values that cannot be
+  explained are flagged instead of guessed, and clean CSVs gain a
+  `frame_issues` column.
 - A `-0` frame value now parses as 0 instead of -1 (for example Lee's `b+1`
   and `b+2,4,3` on block).
 - `guardable` only reads the suffix attached to the leading block value, so
   stance names such as `+12 JGR` and `+5 GMH` are no longer flagged.
-- Startup ranges written by hand as `i13-14` or `i15-i16` (instead of
-  `i13~14`) now keep their end frame and active-frame count, for example
-  Lee's `df+4`.
-- `broken` (filter, command-centre command and `tekken-cli broken`) lists
-  every move with abnormal source frame data.
-- Frame values that cannot be explained (a startup range ending before it
-  starts, a doubled sign such as `--3`, unknown text) are flagged as
-  abnormal source data instead of being guessed; clean CSVs gain a
-  `frame_issues` column.
-- Reloading clean CSVs no longer loses block frame ranges (filter query
-  results showed `-12` instead of `-12~+26`), and nested note bullets
-  (`** …`) are stripped completely, so a clean reload exports identical data.
-- The frame parsers carry general Lean proofs (sign handling, round trips,
-  the guard rule and multi-hit startups) instead of example-only theorems.
+- Startup ranges written by hand as `i13-14` or `i15-i16` now keep their end
+  frame and active-frame count, for example Lee's `df+4`.
+- Reloading clean CSVs no longer loses block frame ranges (filter results
+  showed `-12` instead of `-12~+26`), and nested note bullets are stripped
+  completely.
+- The frame parsers carry general Lean proofs instead of example-only theorems.
 
 ## What's new in v0.1.4
 

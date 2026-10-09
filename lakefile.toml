@@ -1,5 +1,5 @@
 name = "tekken_query"
-version = "0.1.4"
+version = "0.1.5"
 defaultTargets = ["tekken_query", "frame_check"]
 
 [[lean_lib]]
