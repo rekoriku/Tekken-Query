@@ -19,7 +19,7 @@ All data logic lives here: CSV parsing, frame data parsing, filtering, compariso
 | `TekkenQuery/Csv/Split.lean` | Character-by-character CSV splitter (multiline, quote-aware) |
 | `TekkenQuery/Csv/Parser.lean` | Delimiter detection, field cleaning, record building |
 | `TekkenQuery/Models.lean` | `TekkenMove`, `TekkenCharacter`, `HitLevel`, `MoveProperty` (19 typed properties) |
-| `TekkenQuery/Frame.lean` | Startup / block frame parsing with proofs; reused by `frameCompare` for hit and counter-hit |
+| `TekkenQuery/Frame.lean` | Startup / block frame parsing with general proofs (sign, round trip, guard rule, multi-hit) and real-data regression theorems; reused by `frameCompare` for hit and counter-hit |
 | `TekkenQuery/Filter.lean` | `Filter` inductive (25+ constructors incl. `frameCompare`), `FrameField`, `CompareOp`, `Filter.eval`, `query`, `queryAll`, `compare`, 14 proofs |
 | `TekkenQuery/Export.lean` | Clean CSV export with HTML stripping |
 | `TekkenQuery/Json.lean` | JSON serialization: Filter deserialization (from Rust), TekkenMove serialization (to Rust), response envelopes |
@@ -38,6 +38,18 @@ The filter system includes proofs covering:
 - `compareOp_lt_trans` / `compareOp_le_trans` — transitivity
 - `compareOp_lt_implies_le` — ordering implications
 - Plus reflexivity, empty query identity, AND projection
+
+The frame parsers (`Frame.lean`) prove, for all inputs:
+
+- `parseNatFromChars_append` — a digit run parses to its decimal value and the rest is kept
+- `parseSignedValue_nonneg` / `parseSignedValue_nonpos` / `parseSignedValue_minus_eq_neg_plus` / `parseSignedValue_zero` — sign correctness, including `-0` = `+0` = 0
+- `parseSignedValue_renderSignedValue`, `parseBlockFrame_renderSignedValue`, `parseBlockFrame_range_renderSignedValue` — values rendered as `+N` / `-N` / `0` (with an optional `g`, or as an `A~B` range) parse back exactly
+- `parseStartupFrame_range_toString` — the `i{start}~{end}` form rebuilt from clean CSVs parses back exactly
+- `parseBlockFrame_guardable` / `hasGuardSuffix_stop` — the guard flag is decided by the lowercase suffix attached to the leading number; nothing after a space, `(`, `/`, `~` or uppercase stance name affects it
+- `parseStartupFrame_first_hit` — text after the first comma or whitespace (later hits) never changes the startup result
+- `activeFrames_ge_one` / `activeFrames_of_le` / `activeFrames_of_lt` — active-frame counts, including the current fallback to 1 when a range ends before it starts
+
+Lean's `toString` for negative `Int` is built on the opaque `String.Internal.append`, so the clean export's negative `block_frame` text cannot be reasoned about in the kernel; the round-trip theorems use the transparent `renderSignedValue` instead.
 
 ## Rust — Interactive CLI
 

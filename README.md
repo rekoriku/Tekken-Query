@@ -30,6 +30,8 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
   and `b+2,4,3` on block).
 - `guardable` only reads the suffix attached to the leading block value, so
   stance names such as `+12 JGR` and `+5 GMH` are no longer flagged.
+- The frame parsers carry general Lean proofs (sign handling, round trips,
+  the guard rule and multi-hit startups) instead of example-only theorems.
 
 ## What's new in v0.1.4
 

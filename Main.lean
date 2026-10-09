@@ -173,9 +173,8 @@ def main (args : List String) : IO Unit := do
             | none => "?"
           let block := match move.blockFrameValue with
             | some d =>
-              let base := if d.value ≥ 0 then s!"+{d.value}" else s!"{d.value}"
-              let suffix := if d.guardable then "g" else ""
-              s!"{base}{suffix}"
+              -- Round-trips through parseBlockFrame (parseBlockFrame_renderSignedValue)
+              Frame.renderSignedValue d.value ++ (if d.guardable then "g" else "")
             | none => "?"
           let stance := match move.stance with
             | some s => s!"[{s}] "
