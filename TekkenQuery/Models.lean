@@ -319,13 +319,16 @@ def TekkenMove.fromCleanRecord (rec : List (String × Option String)) : TekkenMo
       | some e => some s!"i{s}~{e}"
       | none => some s!"i{s}"
     | none => none
-  -- Reconstruct block frame string: "-10" or "+5g"
+  -- Reconstruct block frame string: "-10", "+5g" or "-12~26"
   let blockFrame := match lookupField rec "block_frame" with
     | some bf =>
       let guard := match lookupField rec "block_guardable" with
         | some "true" => "g"
         | _ => ""
-      some (bf ++ guard)
+      let range := match lookupField rec "block_range_end" with
+        | some e => "~" ++ e
+        | none => ""
+      some (bf ++ guard ++ range)
     | none => none
   {
     command           := command

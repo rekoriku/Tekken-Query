@@ -34,15 +34,16 @@ def stripHtmlTagsAux : List Char → Bool → List Char
 def stripHtmlTags (s : String) : String :=
   String.ofList (stripHtmlTagsAux s.toList false)
 
+/-- Bullet markers and the spaces between them ("* ", "** ", "*  * "). -/
+def isBulletPrefixChar (c : Char) : Bool :=
+  c == '*' || c.isWhitespace
+
 /--
-  Strip leading "* " bullet prefix from a trimmed string.
+  Strip every leading bullet marker, including nested ones ("** Ranges" →
+  "Ranges"), so cleaning an already clean note changes nothing.
 -/
 def stripBullet (s : String) : String :=
-  let trimmed := s.trimAscii.toString
-  match trimmed.toList with
-  | '*' :: ' ' :: rest => (String.ofList rest).trimAscii.toString
-  | '*' :: rest => (String.ofList rest).trimAscii.toString
-  | _ => trimmed
+  (String.ofList (s.toList.dropWhile isBulletPrefixChar)).trimAscii.toString
 
 /--
   Clean a notes field: strip HTML, replace newlines with " | ",
@@ -202,6 +203,34 @@ theorem frameIssuesField_fromCleanRecord (rec : List (String × Option String)) 
     (h : lookupField rec "frame_issues" = some text) :
     (TekkenMove.fromCleanRecord rec).frameIssuesField = text := by
   simp [TekkenMove.frameIssuesField, TekkenMove.fromCleanRecord, h]
+
+/-- No bullet marker or space is left at the start of a stripped line. -/
+theorem dropWhile_isBulletPrefixChar_head (cs : List Char) :
+    ∀ c ∈ (cs.dropWhile isBulletPrefixChar).head?, isBulletPrefixChar c = false := by
+  induction cs with
+  | nil => simp
+  | cons x xs ih =>
+    by_cases hx : isBulletPrefixChar x = true
+    · simpa [List.dropWhile_cons, hx] using ih
+    · intro c hc
+      simp [hx] at hc
+      subst hc
+      simpa using hx
+
+/-- Stripping bullets twice is the same as stripping once (list level). -/
+theorem dropWhile_isBulletPrefixChar_idem (cs : List Char) :
+    (cs.dropWhile isBulletPrefixChar).dropWhile isBulletPrefixChar =
+      cs.dropWhile isBulletPrefixChar := by
+  cases h : cs.dropWhile isBulletPrefixChar with
+  | nil => rfl
+  | cons c rest =>
+    have hc := dropWhile_isBulletPrefixChar_head cs c (by simp [h])
+    simp [hc]
+
+/-- A nested bullet is stripped completely (list level; `trimAscii` does not reduce). -/
+theorem bulletPrefix_nested :
+    "** Ranges".toList.dropWhile isBulletPrefixChar = "Ranges".toList := by
+  decide
 
 /--
   stripHtmlTagsAux never increases the length of the input.

@@ -14,7 +14,9 @@ import Std.Data.HashSet
   Report (stdout): unparsed values, frame issues (abnormal source data such
   as "i25~16" or "--3"), values whose parse changed relative to the
   snapshot (guard-flag changes are counted separately), and values new to or
-  missing from the data. Exits with status 1 when a snapshot value changed
+  missing from the data. It also exports each raw CSV to clean CSV, reloads
+  it and exports again, reporting every field that changes. Exits with
+  status 1 when the clean round trip is not exact or a snapshot value changed
   meaning; values added by a data refresh are reported but do not fail.
 
   Usage: `lake exe frame_check [--update] [RAW_DIR] [SNAPSHOT]`
@@ -92,6 +94,40 @@ def collect (dir : System.FilePath) : IO (Std.HashMap String String) := do
         acc := acc.insert key description
   return acc
 
+/--
+  Clean CSV round trip for one raw CSV's content: export it to clean CSV
+  text, reload that text as clean records and export again. Returns one
+  "command: column" entry per field that differs (empty = exact).
+-/
+def cleanRoundTripDiffs (rawContent : String) : List String :=
+  match Csv.parse rawContent with
+  | .error _ => []
+  | .ok raw =>
+    let rows := raw.records.map (fun r => (TekkenMove.fromRecord r).toCleanRow)
+    let text := String.intercalate "\n" ((cleanCsvHeaders :: rows).map rowToCsvLine) ++ "\n"
+    match Csv.parse text with
+    | .error _ => ["clean CSV does not parse"]
+    | .ok clean =>
+      let again := clean.records.map (fun r => (TekkenMove.fromCleanRecord r).toCleanRow)
+      if again.length != rows.length then ["row count changed"] else
+      (rows.zip again).flatMap fun (a, b) =>
+        ((cleanCsvHeaders.zip (a.zip b)).filter (fun (_, x, y) => x != y)).map
+          fun (h, _, _) => s!"{a.headD ""}: {h}"
+
+/-- Sort strings ascending. -/
+def sortStrings (xs : List String) : List String :=
+  xs.mergeSort (fun a b => decide (a ≤ b))
+
+/-- Clean round-trip differences for every raw CSV in `dir`, prefixed by file stem. -/
+def collectRoundTrip (dir : System.FilePath) : IO (List String) := do
+  let entries ← dir.readDir
+  let files := entries.filter (fun e => e.path.extension == some "csv")
+  let mut acc : List String := []
+  for file in files do
+    let content ← IO.FS.readFile file.path
+    acc := acc ++ (cleanRoundTripDiffs content).map (s!"{file.path.fileStem.getD ""} {·}")
+  return sortStrings acc
+
 /-- Read a snapshot file into a key → description map (missing file = empty). -/
 def readSnapshot (path : System.FilePath) : IO (Std.HashMap String String) := do
   if !(← path.pathExists) then return {}
@@ -100,10 +136,6 @@ def readSnapshot (path : System.FilePath) : IO (Std.HashMap String String) := do
     match line.splitOn "\t" with
     | [column, value, description] => acc.insert s!"{column}\t{value}" description
     | _ => acc
-
-/-- Sort strings ascending. -/
-def sortStrings (xs : List String) : List String :=
-  xs.mergeSort (fun a b => decide (a ≤ b))
 
 def main (args : List String) : IO UInt32 := do
   let update := args.contains "--update"
@@ -114,6 +146,7 @@ def main (args : List String) : IO UInt32 := do
     IO.eprintln s!"frame_check: raw data directory {rawDir} not found; fetch data first"
     return 2
   let current ← collect rawDir
+  let roundTrip ← collectRoundTrip rawDir
   let old ← readSnapshot snapshotPath
   let keys := sortStrings (current.toList.map (·.1))
   let unparsed := keys.filter (fun k => (current.get? k).any (·.startsWith "UNPARSED"))
@@ -130,6 +163,8 @@ def main (args : List String) : IO UInt32 := do
   for k in unparsed do IO.println s!"  {k}"
   IO.println s!"Frame issues (abnormal source data): {flagged.length}"
   for k in flagged do IO.println s!"  {k}\t{(current.get? k).getD ""}"
+  IO.println s!"Clean CSV round trip differences: {roundTrip.length}"
+  for d in roundTrip.take 20 do IO.println s!"  {d}"
   IO.println s!"Changed meaning: {changed.length} (guard flag changed: {guardChanged.length})"
   for (k, o, n) in changed do IO.println s!"  {k}\t{o} -> {n}"
   IO.println s!"New values: {added.length}"
@@ -141,6 +176,9 @@ def main (args : List String) : IO UInt32 := do
     IO.FS.writeFile snapshotPath (String.join lines)
     IO.eprintln s!"frame_check: wrote {lines.length} entries to {snapshotPath}"
     return 0
+  if !roundTrip.isEmpty then
+    IO.eprintln "frame_check: reloading clean CSVs changes data; fix TekkenMove.fromCleanRecord"
+    return 1
   if changed.isEmpty then return 0
   IO.eprintln "frame_check: parse results changed; review them, then rerun with --update"
   return 1

@@ -37,6 +37,9 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
   starts, a doubled sign such as `--3`, unknown text) are flagged as
   abnormal source data instead of being guessed; clean CSVs gain a
   `frame_issues` column.
+- Reloading clean CSVs no longer loses block frame ranges (filter query
+  results showed `-12` instead of `-12~+26`), and nested note bullets
+  (`** …`) are stripped completely, so a clean reload exports identical data.
 - The frame parsers carry general Lean proofs (sign handling, round trips,
   the guard rule and multi-hit startups) instead of example-only theorems.
 
