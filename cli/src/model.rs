@@ -32,6 +32,87 @@ pub struct Move {
     pub tags: String,
     #[serde(default)]
     pub notes: String,
+    /// Abnormal source values flagged by Lean: `column:code:written` entries
+    /// joined by `"; "`. Empty for ordinary moves and older clean CSVs.
+    #[serde(default)]
+    pub frame_issues: String,
+}
+
+/// A frame column that Lean can flag as abnormal source data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameColumn {
+    Startup,
+    Block,
+    Hit,
+    CounterHit,
+}
+
+impl FrameColumn {
+    /// Map a clean CSV column name to a frame column.
+    fn from_column_name(name: &str) -> Option<Self> {
+        match name {
+            "startup" => Some(Self::Startup),
+            "block_frame" => Some(Self::Block),
+            "hit_frame" => Some(Self::Hit),
+            "counter_hit_frame" => Some(Self::CounterHit),
+            _ => None,
+        }
+    }
+
+    /// Human-readable column label.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Startup => "startup",
+            Self::Block => "block",
+            Self::Hit => "hit",
+            Self::CounterHit => "counter hit",
+        }
+    }
+}
+
+/// Why Lean flagged a frame value (codes of `Frame.FrameIssue`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IssueKind {
+    /// A startup range whose written end precedes its start.
+    RangeEndBeforeStart,
+    /// Two signs or range separators in a row.
+    DoubledSign,
+    /// Neither a frame value nor known notation.
+    Unrecognized,
+    /// A code from a newer Lean export that this CLI does not know.
+    Other(String),
+}
+
+impl IssueKind {
+    fn from_code(code: &str) -> Self {
+        match code {
+            "range_end_before_start" => Self::RangeEndBeforeStart,
+            "doubled_sign" => Self::DoubledSign,
+            "unrecognized" => Self::Unrecognized,
+            other => Self::Other(other.to_string()),
+        }
+    }
+
+    /// Short explanation of the issue.
+    pub fn description(&self) -> &str {
+        match self {
+            Self::RangeEndBeforeStart => "range ends before it starts",
+            Self::DoubledSign => "two signs in a row",
+            Self::Unrecognized => "not a frame value or known notation",
+            Self::Other(code) => code,
+        }
+    }
+}
+
+/// One abnormal frame value of a move, as reported by Lean.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameIssue {
+    /// The flagged column.
+    pub column: FrameColumn,
+    /// Why it was flagged.
+    pub kind: IssueKind,
+    /// The value as written in the source data.
+    pub written: String,
 }
 
 /// A character with their move list.
@@ -105,6 +186,27 @@ impl Move {
         }
     }
 
+    /// Abnormal source values of this move, decoded from `frame_issues`.
+    ///
+    /// Entries for columns this CLI does not know are skipped.
+    pub fn frame_issue_list(&self) -> Vec<FrameIssue> {
+        self.frame_issues
+            .split(';')
+            .filter_map(|entry| {
+                let mut parts = entry.trim().splitn(3, ':');
+                let column = FrameColumn::from_column_name(parts.next()?)?;
+                let kind = IssueKind::from_code(parts.next()?);
+                let written = parts.next().unwrap_or_default().to_string();
+                Some(FrameIssue { column, kind, written })
+            })
+            .collect()
+    }
+
+    /// Whether Lean flagged this column of the move as abnormal source data.
+    pub fn has_frame_issue(&self, column: FrameColumn) -> bool {
+        self.frame_issue_list().iter().any(|i| i.column == column)
+    }
+
     /// Format startup frame for display.
     pub fn startup_display(&self) -> String {
         match self.startup {
@@ -127,5 +229,65 @@ where
         Ok(None)
     } else {
         s.parse::<i64>().map(Some).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn move_with_issues(frame_issues: &str) -> Result<Move, csv::Error> {
+        let data = format!("command,frame_issues\nIZU.3,\"{frame_issues}\"\n");
+        let mut reader = csv::Reader::from_reader(data.as_bytes());
+        reader.deserialize().next().unwrap_or_else(|| {
+            Err(csv::Error::from(std::io::Error::other("no row")))
+        })
+    }
+
+    #[test]
+    fn decodes_frame_issue_entries() -> Result<(), csv::Error> {
+        let m = move_with_issues(
+            "startup:range_end_before_start:i16~15 i14~15; counter_hit_frame:unrecognized:js",
+        )?;
+        assert_eq!(
+            m.frame_issue_list(),
+            vec![
+                FrameIssue {
+                    column: FrameColumn::Startup,
+                    kind: IssueKind::RangeEndBeforeStart,
+                    written: "i16~15 i14~15".to_string(),
+                },
+                FrameIssue {
+                    column: FrameColumn::CounterHit,
+                    kind: IssueKind::Unrecognized,
+                    written: "js".to_string(),
+                },
+            ]
+        );
+        assert!(m.has_frame_issue(FrameColumn::Startup));
+        assert!(!m.has_frame_issue(FrameColumn::Block));
+        Ok(())
+    }
+
+    #[test]
+    fn written_value_may_contain_colons_and_unknown_entries_are_skipped() -> Result<(), csv::Error> {
+        let m = move_with_issues("block_frame:new_code:a:b; recovery:doubled_sign:x")?;
+        assert_eq!(
+            m.frame_issue_list(),
+            vec![FrameIssue {
+                column: FrameColumn::Block,
+                kind: IssueKind::Other("new_code".to_string()),
+                written: "a:b".to_string(),
+            }]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn older_clean_csv_without_column_has_no_issues() -> Result<(), csv::Error> {
+        let mut reader = csv::Reader::from_reader("command,startup\n1,10\n".as_bytes());
+        let rows: Vec<Move> = reader.deserialize().collect::<Result<_, _>>()?;
+        assert!(rows.iter().all(|m| m.frame_issue_list().is_empty()));
+        Ok(())
     }
 }

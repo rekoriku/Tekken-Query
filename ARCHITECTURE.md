@@ -76,8 +76,8 @@ Handles everything that isn't data logic: network, display, user input, aliases.
 | `lean_server.rs` | `LeanServer` subprocess: start, load, query, compare, convert, quit; filter→JSON serialization |
 | `filter.rs` | Filter parsing for Rust→JSON translation; compact and spaced frame comparisons (`hit>0`, `hit +5`, `startup i15`) |
 | `fetch.rs` | GitHub API, raw CSV fetching, upstream commit checking, conversion via `LeanServer` |
-| `display.rs` | Column layout, color formatting (pad-then-colorize for ANSI alignment), per-component hit level coloring, single-move detail headers |
-| `model.rs` | `Move`, `Character` structs (deserialized from clean CSV) |
+| `display.rs` | Column layout, color formatting (pad-then-colorize for ANSI alignment), per-component hit level coloring, single-move detail headers, abnormal-source-data marker and legend (display only; Lean decides what is flagged) |
+| `model.rs` | `Move`, `Character` structs (deserialized from clean CSV); decodes Lean's `frame_issues` column |
 | `data.rs` | Manifest loading, upstream commit checking |
 | `aliases.rs` | Custom user-defined move aliases (`data/aliases.json`), add/remove/list |
 | `completion.rs` | Tab completion for REPL (filter tokens, aliases, move commands, stances) |

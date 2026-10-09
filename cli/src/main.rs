@@ -212,6 +212,7 @@ fn cmd_query(
     for m in &refs {
         eprintln!("{}", display::format_move_row(m, &cols));
     }
+    display::print_frame_issue_legend(&refs);
     server.quit();
     Ok(())
 }
@@ -289,6 +290,7 @@ fn cmd_compare(
     for m in &refs2 {
         eprintln!("{}", display::format_move_row(m, &cols));
     }
+    display::print_frame_issue_legend(&all);
     server.quit();
     Ok(())
 }

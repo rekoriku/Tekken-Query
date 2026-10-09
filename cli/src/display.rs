@@ -1,7 +1,7 @@
 /// Display formatting for moves and query results.
 use colored::Colorize;
 
-use crate::model::Move;
+use crate::model::{FrameColumn, Move};
 
 /// Right-pad a string to a given width with spaces.
 fn pad_right(s: &str, width: usize) -> String {
@@ -108,6 +108,46 @@ fn colorize_hit(text: &str) -> String {
     text.to_string()
 }
 
+/// Marker appended to a cell whose source value Lean flagged as abnormal.
+const ISSUE_MARKER: char = '?';
+
+/// Cell text for a column, with the abnormal-data marker when flagged. A
+/// flagged value that has no parsed form ("?") is shown as written.
+fn marked(m: &Move, column: FrameColumn, text: String) -> String {
+    match m.frame_issue_list().into_iter().find(|i| i.column == column) {
+        Some(issue) if text == "?" => format!("{}{ISSUE_MARKER}", issue.written),
+        Some(_) => format!("{text}{ISSUE_MARKER}"),
+        None => text,
+    }
+}
+
+/// Startup cell text (with marker).
+fn startup_cell(m: &Move) -> String {
+    marked(m, FrameColumn::Startup, m.startup_display())
+}
+
+/// Block cell text (with marker).
+fn block_cell(m: &Move) -> String {
+    marked(m, FrameColumn::Block, m.block_frame_display())
+}
+
+/// Hit cell text (with marker).
+fn hit_cell(m: &Move) -> String {
+    let text = if m.hit_frame.is_empty() {
+        "?".to_string()
+    } else {
+        m.hit_frame.trim().to_string()
+    };
+    marked(m, FrameColumn::Hit, text)
+}
+
+/// Highlight a flagged cell (black on yellow), leaving its padding plain so
+/// the column width is unchanged.
+fn highlight_issue(text: &str, width: usize) -> String {
+    let padding = " ".repeat(width.saturating_sub(text.len()));
+    format!("{}{padding}", text.black().on_yellow())
+}
+
 /// Column widths for the table layout.
 pub struct Columns {
     cmd: usize,
@@ -128,12 +168,11 @@ fn compute_columns(moves: &[&Move], cmd_width: usize) -> Columns {
         let hl = if m.hit_level.is_empty() { 1 } else { m.hit_level.trim().len() };
         level = level.max(hl);
 
-        startup = startup.max(m.startup_display().len());
+        startup = startup.max(startup_cell(m).len());
 
-        block = block.max(m.block_frame_display().len());
+        block = block.max(block_cell(m).len());
 
-        let h = if m.hit_frame.is_empty() { 1 } else { m.hit_frame.trim().len() };
-        hit = hit.max(h);
+        hit = hit.max(hit_cell(m).len());
     }
 
     Columns {
@@ -152,21 +191,28 @@ pub fn format_move_row(m: &Move, cols: &Columns) -> String {
     let cmd = pad_right(&display_cmd(m), cols.cmd);
     let hl_raw = if m.hit_level.is_empty() { "?" } else { m.hit_level.trim() };
     let hl_padded = pad_right(hl_raw, cols.level);
-    let startup = pad_right(&m.startup_display(), cols.startup);
-    let block_raw = m.block_frame_display();
-    let block_padded = pad_right(&block_raw, cols.block);
-    let hit_raw = if m.hit_frame.is_empty() {
-        "?".to_string()
-    } else {
-        m.hit_frame.trim().to_string()
-    };
-    let hit_padded = pad_right(&hit_raw, cols.hit);
+    let startup_raw = startup_cell(m);
+    let block_raw = block_cell(m);
+    let hit_raw = hit_cell(m);
 
-    // Colorize AFTER padding so escape codes don't affect width
+    // Colorize AFTER padding so escape codes don't affect width; flagged
+    // cells get the abnormal-data highlight instead of their value color.
     let hl_colored = colorize_hit_level(m, &hl_padded);
-    let startup_colored = colorize_startup_str(&startup);
-    let block_colored = colorize_block(m, &block_padded);
-    let hit_colored = colorize_hit(&hit_padded);
+    let startup_colored = if m.has_frame_issue(FrameColumn::Startup) {
+        highlight_issue(&startup_raw, cols.startup)
+    } else {
+        colorize_startup_str(&pad_right(&startup_raw, cols.startup))
+    };
+    let block_colored = if m.has_frame_issue(FrameColumn::Block) {
+        highlight_issue(&block_raw, cols.block)
+    } else {
+        colorize_block(m, &pad_right(&block_raw, cols.block))
+    };
+    let hit_colored = if m.has_frame_issue(FrameColumn::Hit) {
+        highlight_issue(&hit_raw, cols.hit)
+    } else {
+        colorize_hit(&pad_right(&hit_raw, cols.hit))
+    };
 
     let name = m.name.trim();
     let name_part = if name.is_empty() {
@@ -238,6 +284,9 @@ pub fn format_move_detail(m: &Move) -> String {
     if !m.tags.is_empty() {
         lines.push(format!("    Tags:   {}", m.tags.trim()));
     }
+    for line in frame_issue_lines(None, m) {
+        lines.push(format!("    Issue:  {line}"));
+    }
     if !m.notes.is_empty() {
         let notes = m.notes.trim();
         let truncated = if notes.len() > 100 {
@@ -249,6 +298,52 @@ pub fn format_move_detail(m: &Move) -> String {
     }
 
     lines.join("\n")
+}
+
+/// One line per abnormal source value of a move, optionally prefixed with
+/// its character name.
+fn frame_issue_lines(character: Option<&str>, m: &Move) -> Vec<String> {
+    let who = match character {
+        Some(name) => format!("{name} {}", display_cmd(m)),
+        None => display_cmd(m),
+    };
+    m.frame_issue_list()
+        .iter()
+        .map(|issue| {
+            format!(
+                "{who} {} '{}': {} (likely a source data typo)",
+                issue.column.label(),
+                issue.written,
+                issue.kind.description(),
+            )
+        })
+        .collect()
+}
+
+/// Legend lines explaining the abnormal-data marker for the shown moves.
+/// Empty when none of them is flagged.
+pub fn frame_issue_legend(moves: &[(Option<&str>, &Move)]) -> Vec<String> {
+    let lines: Vec<String> = moves
+        .iter()
+        .flat_map(|(character, m)| frame_issue_lines(*character, m))
+        .collect();
+    if lines.is_empty() {
+        return lines;
+    }
+    let mut legend = vec![format!(
+        "{} marks abnormal source data (not corrected):",
+        ISSUE_MARKER.to_string().black().on_yellow()
+    )];
+    legend.extend(lines.into_iter().map(|line| format!("  {line}")));
+    legend
+}
+
+/// Print the abnormal-data legend for a table of moves from one character.
+pub fn print_frame_issue_legend(moves: &[&Move]) {
+    let entries: Vec<(Option<&str>, &Move)> = moves.iter().map(|m| (None, *m)).collect();
+    for line in frame_issue_legend(&entries) {
+        eprintln!("{line}");
+    }
 }
 
 /// Format block frame range for detail display.
@@ -312,6 +407,11 @@ pub fn print_global_move_table(results: &[(&str, &Move)], query: &str) {
         let row = format_move_row(m, &cols);
         eprintln!("{} {}", char_col.cyan(), row);
     }
+
+    let entries: Vec<(Option<&str>, &Move)> = results.iter().map(|(n, m)| (Some(*n), *m)).collect();
+    for line in frame_issue_legend(&entries) {
+        eprintln!("{line}");
+    }
 }
 
 /// Print roster-wide filter results grouped by character.
@@ -357,6 +457,21 @@ pub fn print_roster_query_grouped<'a>(
                 moves.len() - per_character_limit.unwrap_or(0),
             );
         }
+    }
+
+    let entries: Vec<(Option<&str>, &Move)> = groups
+        .iter()
+        .flat_map(|(name, moves)| {
+            let take = per_character_limit.unwrap_or(usize::MAX);
+            moves.iter().take(take).map(move |m| (Some(*name), *m))
+        })
+        .collect();
+    let legend = frame_issue_legend(&entries);
+    if !legend.is_empty() {
+        eprintln!();
+    }
+    for line in legend {
+        eprintln!("{line}");
     }
 }
 
@@ -476,4 +591,50 @@ pub fn print_character_stats(name: &str, moves: &[Move]) {
     eprintln!(
         "  Plus: {plus}  Punishable: {punish}  Homing: {homing}  Heat: {heat}  PC: {pc}"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn flagged_move() -> Result<Move, csv::Error> {
+        let data = "command,startup,block_frame,frame_issues\n\
+                    uf+3+4,25,,startup:range_end_before_start:i25~16; block_frame:doubled_sign:--3\n";
+        let mut reader = csv::Reader::from_reader(data.as_bytes());
+        let rows: Vec<Move> = reader.deserialize().collect::<Result<_, _>>()?;
+        rows.into_iter()
+            .next()
+            .ok_or_else(|| csv::Error::from(std::io::Error::other("no row")))
+    }
+
+    #[test]
+    fn flagged_cell_gets_marker_and_keeps_width() -> Result<(), csv::Error> {
+        let m = flagged_move()?;
+        let cols = layout_for(&[&m]);
+        assert_eq!(startup_cell(&m), "i25?");
+        assert_eq!(block_cell(&m), "--3?");
+        assert!(format_move_row(&m, &cols).contains("i25?"));
+        assert!(highlight_issue("i25?", 8).ends_with("    "));
+        Ok(())
+    }
+
+    #[test]
+    fn legend_lists_flagged_values_only() -> Result<(), csv::Error> {
+        let m = flagged_move()?;
+        let plain_data = "command,startup\n1,10\n";
+        let mut reader = csv::Reader::from_reader(plain_data.as_bytes());
+        let plain: Vec<Move> = reader.deserialize().collect::<Result<_, _>>()?;
+        let mut shown: Vec<(Option<&str>, &Move)> = plain.iter().map(|p| (None, p)).collect();
+        assert!(frame_issue_legend(&shown).is_empty());
+
+        shown.push((Some("Miary Zo"), &m));
+        let legend = frame_issue_legend(&shown);
+        assert_eq!(legend.len(), 3);
+        assert_eq!(
+            legend[1],
+            "  Miary Zo uf+3+4 startup 'i25~16': range ends before it starts \
+             (likely a source data typo)"
+        );
+        Ok(())
+    }
 }

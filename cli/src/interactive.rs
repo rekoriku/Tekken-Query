@@ -552,6 +552,7 @@ fn show_move_table(moves: &[&Move], query: &str) {
     for m in moves {
         eprintln!("{}", display::format_move_row(m, &cols));
     }
+    display::print_frame_issue_legend(moves);
 }
 
 // ── Global move lookup ───────────────────────────────────────────────
@@ -931,6 +932,7 @@ fn run_query(
         for m in &refs {
             eprintln!("{}", display::format_move_row(m, &cols));
         }
+        display::print_frame_issue_legend(&refs);
     }
     Ok(())
 }
@@ -976,6 +978,7 @@ fn character_loop(
                 for m in &refs {
                     eprintln!("{}", display::format_move_row(m, &cols));
                 }
+                display::print_frame_issue_legend(&refs);
                 continue;
             }
             "query" => {
