@@ -24,6 +24,11 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
   <br><em>Full roster with move counts</em>
 </p>
 
+## Unreleased
+
+- Release archives include `LICENSE.txt` and `THIRD_PARTY_LICENSES.txt` with
+  the licenses of the bundled Lean runtime, its libraries and the Rust crates.
+
 ## What's new in v0.1.5
 
 - `broken` (filter, command-centre command and `tekken-cli broken`) lists
@@ -362,3 +367,8 @@ Frame data is sourced from [tekkendocs](https://github.com/pbruvoll/tekkendocs) 
 ## License
 
 [MIT](LICENSE)
+
+Release archives also contain `THIRD_PARTY_LICENSES.txt`: the licenses of the
+Lean runtime, the libraries it bundles (GMP, LLVM libc++, libuv) and the Rust
+standard library and crates linked into the binaries. Generate it locally with
+`python3 scripts/third_party_licenses.py`.

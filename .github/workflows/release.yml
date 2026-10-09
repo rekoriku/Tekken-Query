@@ -39,6 +39,18 @@ jobs:
       - name: Build launcher
         run: cargo build --release --manifest-path launcher/Cargo.toml
 
+      # ── License notices ────────────────────────────────────────
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Third-party notices
+        shell: bash
+        run: |
+          mkdir -p staging
+          python scripts/third_party_licenses.py --output staging/THIRD_PARTY_LICENSES.txt
+          cp LICENSE staging/LICENSE.txt
+
       # ── Package (Linux / macOS) ────────────────────────────────
       - name: Package (tar.gz)
         if: matrix.archive == 'tar.gz'

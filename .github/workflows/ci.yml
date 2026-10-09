@@ -31,6 +31,11 @@ jobs:
             exit 1
           fi
 
+      # Release archives ship these notices; generating them here catches a
+      # dependency without license files before the next release.
+      - name: Third-party notices
+        run: python3 scripts/third_party_licenses.py --output THIRD_PARTY_LICENSES.txt
+
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

@@ -135,6 +135,18 @@ The character list is never hardcoded — it's discovered from the GitHub API on
 
 Fetches may write newly downloaded raw and clean character files as they progress, but the manifest is updated only if every discovered character succeeds. A partial fetch therefore cannot advertise an incomplete roster as current. Roster queries likewise fail if a manifest-listed character cannot be loaded instead of silently omitting it.
 
+## Release notices
+
+Release archives contain `LICENSE.txt` and `THIRD_PARTY_LICENSES.txt`, which `scripts/third_party_licenses.py` generates on each platform in the release workflow (CI also runs it on Linux). `tekken_query` statically links the Lean runtime and standard library (Apache-2.0) with the libraries the Lean toolchain bundles: GMP (LGPL-3.0), LLVM libc++/libc++abi/libunwind and libuv. The Rust binaries link the Rust standard library and the crates of their dependency graph. The script takes Lean's `LICENSE` and `LICENSES` from the toolchain that built the binary and each crate's license files from its Cargo registry source; texts no toolchain provides are tracked in `licenses/`:
+
+| File | Source |
+|------|--------|
+| `licenses/libuv-1.48.0.txt`, `licenses/libuv-1.48.0-extra.txt` | libuv `LICENSE` and `LICENSE-extra` at tag `v1.48.0`, the version linked by Lean 4.28.0 (its version string is embedded in `tekken_query`) |
+| `licenses/GPL-3.0.txt` | https://www.gnu.org/licenses/gpl-3.0.txt, required alongside GMP's LGPL-3.0 |
+| `licenses/rust-COPYRIGHT.txt`, `licenses/rust-LICENSE-MIT.txt` | rust-lang/rust `COPYRIGHT` and `LICENSE-MIT` at tag `1.90.0` |
+
+After a Lean toolchain update, check the libuv version in the new `tekken_query` (`strings .lake/build/bin/tekken_query | grep -A1 uv-common.c`) and replace the libuv texts if it changed.
+
 ## Verification
 
 CI builds Lean and Rust on every push to `main` and every pull request, rejects banned Lean escape hatches and Lean warnings, runs Clippy with warnings denied, and runs the Rust test suite. Regression tests cover invalid frame filters and malformed server response shapes. `data/` is not tracked, so CI has no frame data; checks against real data run locally (below).
