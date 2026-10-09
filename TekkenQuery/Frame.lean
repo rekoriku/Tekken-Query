@@ -77,7 +77,7 @@ structure BlockFrameData where
 /--
   Parse a signed integer from a character list.
   Returns the parsed value and remaining characters after the digits.
-  Handles +N, -N, and unsigned N.
+  Handles +N, -N, and unsigned N; "-0" and "+0" both parse to 0.
 -/
 def parseSignedValue (chars : List Char) : Option (Int × List Char) :=
   match chars with
@@ -87,7 +87,7 @@ def parseSignedValue (chars : List Char) : Option (Int × List Char) :=
     | none => none
   | '-' :: rest =>
     match parseNatFromChars rest with
-    | some (n, remaining) => some (Int.negSucc (n - 1), remaining)
+    | some (n, remaining) => some (-(Int.ofNat n), remaining)
     | none => none
   | _ =>
     match parseNatFromChars chars with
@@ -153,19 +153,18 @@ def parseBlockFrame (s : String) : Option BlockFrameData :=
 -- ============================================================
 
 /--
-  Int.negSucc always produces a negative value.
-  This means parseBlockFrame with "-" prefix is always negative.
+  Regression: "-0" (Lee b+1, b+2,4,3 on block) parses to 0, not -1.
 -/
-theorem negSucc_neg (n : Nat) : Int.negSucc n < 0 := by
-  omega
+theorem parseBlockFrame_neg_zero :
+    parseBlockFrame "-0" = some { value := 0 } := by
+  rfl
 
 /--
-  Negative block frame representation is correct:
-  "-10" parses to Int.negSucc 9, which equals -10.
+  Negative values keep their magnitude: "-10" parses to -10.
 -/
-theorem negSucc_eq_neg (n : Nat) (hn : n > 0) :
-    Int.negSucc (n - 1) = -↑n := by
-  omega
+theorem parseBlockFrame_neg_ten :
+    parseBlockFrame "-10" = some { value := -10 } := by
+  rfl
 
 /--
   Active frames are always ≥ 1 when computable (range is present).

@@ -24,6 +24,11 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
   <br><em>Full roster with move counts</em>
 </p>
 
+## Unreleased
+
+- A `-0` frame value now parses as 0 instead of -1 (for example Lee's `b+1`
+  and `b+2,4,3` on block).
+
 ## What's new in v0.1.4
 
 - A normalized command centre: open a character, run `reina df1` directly, or
