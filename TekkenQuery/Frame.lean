@@ -159,25 +159,43 @@ def isRangeSep (c : Char) : Bool :=
   c == '~' || c == '-'
 
 /--
-  Parse a startup frame string into structured data.
-  "i13"     → some { startup := 13 }
-  "i12~13"  → some { startup := 12, activeEnd := some 13 }
-  "i10,i12" → some { startup := 10 } (comma = multi-hit, take first)
+  The first hit's startup range exactly as written: start and optional end,
+  before their order is checked.
   The range end may be written "~N", "-N", "~iN" or "-iN": the separator is
   '~' or '-', and the end may repeat the impact-frame prefix 'i'/'I'
-  ("i15-i16" → { startup := 15, activeEnd := some 16 }).
+  ("i15-i16" → (15, some 16)). "i25~16" → (25, some 16).
 -/
-def parseStartupFrame (s : String) : Option StartupData :=
+def parseStartupRange (s : String) : Option (Nat × Option Nat) :=
   let chars := startupToken s.toList
   let beforeSep := chars.takeWhile (fun c => !isRangeSep c)
   let afterSep := dropImpactPrefix ((chars.dropWhile (fun c => !isRangeSep c)).drop 1)
   match parseNatFromChars beforeSep with
   | some (n, _) =>
-    let activeEnd := match parseNatFromChars afterSep with
+    let writtenEnd := match parseNatFromChars afterSep with
       | some (m, _) => some m
       | none => none
-    some { startup := n, activeEnd := activeEnd }
+    some (n, writtenEnd)
   | none => none
+
+/--
+  Keep a written range end only when it does not precede the start. An end
+  before the start cannot be explained ("i25~16"); it is dropped as unknown
+  and reported by `startupIssues` instead of being guessed.
+-/
+def orderedEnd (start : Nat) : Option Nat → Option Nat
+  | some e => if start ≤ e then some e else none
+  | none => none
+
+/--
+  Parse a startup frame string into structured data.
+  "i13"     → some { startup := 13 }
+  "i12~13"  → some { startup := 12, activeEnd := some 13 }
+  "i10,i12" → some { startup := 10 } (comma = multi-hit, take first)
+  "i13-14"  → some { startup := 13, activeEnd := some 14 }
+  "i25~16"  → some { startup := 25 } (end before start: unknown, flagged)
+-/
+def parseStartupFrame (s : String) : Option StartupData :=
+  (parseStartupRange s).map fun r => { startup := r.1, activeEnd := orderedEnd r.1 r.2 }
 
 /--
   Parse a block/hit frame string into structured data.
@@ -210,6 +228,97 @@ def renderSignedValue : Int → String
   | .ofNat 0 => "0"
   | .ofNat (n + 1) => "+" ++ toString (n + 1)
   | .negSucc m => "-" ++ toString (m + 1)
+
+-- ============================================================
+-- Abnormal source data
+-- ============================================================
+
+/--
+  A frame value that the notation cannot explain: most likely a human typo
+  in the source data (the Wavu wiki), reported so it can be fixed there.
+  Parsers never guess a correction.
+-/
+inductive FrameIssue where
+  /-- A startup range whose written end precedes its start ("i25~16"). -/
+  | rangeEndBeforeStart (start finish : Nat)
+  /-- Two signs or range separators in a row ("--3", "i39~-41"). -/
+  | doubledSign
+  /-- Neither a frame value nor a known notation (counter hit "js"). -/
+  | unrecognized
+  deriving Repr, BEq, DecidableEq
+
+/-- Stable machine-readable code, used in the clean CSV `frame_issues` column. -/
+def FrameIssue.code : FrameIssue → String
+  | .rangeEndBeforeStart _ _ => "range_end_before_start"
+  | .doubledSign => "doubled_sign"
+  | .unrecognized => "unrecognized"
+
+/-- Whether two characters satisfying `marks` stand next to each other. -/
+def hasAdjacent (marks : Char → Bool) : List Char → Bool
+  | [] => false
+  | a :: rest => (marks a && (rest.head?.map marks).getD false) || hasAdjacent marks rest
+
+/-- Signs of block, hit and counter-hit values. -/
+def isSignChar (c : Char) : Bool :=
+  c == '+' || c == '-'
+
+/-- Signs and range separators of startup values (startups are unsigned). -/
+def isStartupMark (c : Char) : Bool :=
+  c == '+' || c == '-' || c == '~'
+
+/-- A value's characters without surrounding whitespace. -/
+def trimChars (s : String) : List Char :=
+  ((s.toList.dropWhile Char.isWhitespace).reverse.dropWhile Char.isWhitespace).reverse
+
+/--
+  Known non-numeric block, hit and counter-hit notation (data/raw,
+  2026-10-09): "!" unblockable, "N/A" not applicable, "KND" knockdown and
+  "LNC" launch results, "th" becomes a throw on hit.
+-/
+def knownFrameNotations : List (List Char) :=
+  [['!'], ['N', '/', 'A'], ['K', 'N', 'D'], ['L', 'N', 'C'], ['t', 'h']]
+
+/-- Whether a block, hit or counter-hit value is known non-numeric notation. -/
+def knownFrameNotation (s : String) : Bool :=
+  knownFrameNotations.contains (trimChars s)
+
+/--
+  Known non-numeric startup notation (data/raw, 2026-10-09): a leading comma
+  (",i14~15": the first hit has no startup of its own), jump status "js12",
+  per-state variants starting "N/A" ("N/A / i26~i31 Heat") and "(depends)".
+-/
+def knownStartupNotation (s : String) : Bool :=
+  match trimChars s with
+  | ',' :: _ => true
+  | 'j' :: 's' :: d :: _ => isDigit d
+  | 'N' :: '/' :: 'A' :: _ => true
+  | cs => cs == ['(', 'd', 'e', 'p', 'e', 'n', 'd', 's', ')']
+
+/--
+  Abnormal startup values: a first-hit range ending before it starts, two
+  signs or separators in a row anywhere in the value, or a value that does
+  not parse and is not known notation.
+-/
+def startupIssues (s : String) : List FrameIssue :=
+  let inverted := match parseStartupRange s with
+    | some (n, some e) => if e < n then [FrameIssue.rangeEndBeforeStart n e] else []
+    | _ => []
+  let doubled := if hasAdjacent isStartupMark s.toList then [FrameIssue.doubledSign] else []
+  let unrecognized :=
+    if (parseStartupRange s).isNone && !knownStartupNotation s &&
+        !hasAdjacent isStartupMark s.toList then
+      [FrameIssue.unrecognized]
+    else []
+  inverted ++ doubled ++ unrecognized
+
+/--
+  Abnormal block, hit or counter-hit values: two signs in a row anywhere in
+  the value, or a value that does not parse and is not known notation.
+-/
+def frameIssues (s : String) : List FrameIssue :=
+  if hasAdjacent isSignChar s.toList then [FrameIssue.doubledSign]
+  else if (parseBlockFrame s).isNone && !knownFrameNotation s then [FrameIssue.unrecognized]
+  else []
 
 -- ============================================================
 -- Proofs
@@ -718,14 +827,22 @@ theorem startupToken_first_hit (first rest : List Char) (sep : Char) (hne : firs
         if_neg (by simp [hsep])]
       simpa using (List.takeWhile_append_of_pos (l₂ := []) hfirst).symm
 
-/-- Multi-hit startup, for strings: later hits never change the result. -/
+/-- Multi-hit startup, for strings: later hits never change the written range. -/
+theorem parseStartupRange_first_hit (first rest : List Char) (sep : Char) (hne : first ≠ [])
+    (hfirst : ∀ c ∈ first, (c != ',' && !c.isWhitespace) = true)
+    (hsep : (sep != ',' && !sep.isWhitespace) = false) :
+    parseStartupRange (String.ofList (first ++ sep :: rest)) =
+      parseStartupRange (String.ofList first) := by
+  simp only [parseStartupRange, String.toList_ofList,
+    startupToken_first_hit first rest sep hne hfirst hsep]
+
+/-- Multi-hit startup: later hits never change the parsed startup. -/
 theorem parseStartupFrame_first_hit (first rest : List Char) (sep : Char) (hne : first ≠ [])
     (hfirst : ∀ c ∈ first, (c != ',' && !c.isWhitespace) = true)
     (hsep : (sep != ',' && !sep.isWhitespace) = false) :
     parseStartupFrame (String.ofList (first ++ sep :: rest)) =
       parseStartupFrame (String.ofList first) := by
-  simp only [parseStartupFrame, String.toList_ofList,
-    startupToken_first_hit first rest sep hne hfirst hsep]
+  simp only [parseStartupFrame, parseStartupRange_first_hit first rest sep hne hfirst hsep]
 
 /-- An optional impact-frame prefix: none, 'i' or 'I'. -/
 def IsImpactPrefix (p : List Char) : Prop :=
@@ -758,19 +875,19 @@ theorem dropImpactPrefix_append (p ds rest : List Char) (hp : IsImpactPrefix p)
 /-- `parseStartupFrame` only looks at the characters of its input. -/
 theorem parseStartupFrame_congr {s t : String} (h : s.toList = t.toList) :
     parseStartupFrame s = parseStartupFrame t := by
-  simp only [parseStartupFrame, h]
+  simp only [parseStartupFrame, parseStartupRange, h]
 
 /--
-  Every spelling of a startup range in the data parses the same: an optional
+  Every spelling of a startup range in the data reads the same: an optional
   'i'/'I' before the start, '~' or '-' between, and an optional 'i'/'I'
   before the end. "i13~14", "i13-14", "i13~i14", "i13-i14" and "13-14" all
-  give start 13 and end 14.
+  give start 13 and written end 14.
 -/
-theorem parseStartupFrame_range (a b : Nat) (p₁ p₂ : List Char) (sep : Char)
+theorem parseStartupRange_range (a b : Nat) (p₁ p₂ : List Char) (sep : Char)
     (hp₁ : IsImpactPrefix p₁) (hp₂ : IsImpactPrefix p₂) (hsep : isRangeSep sep = true) :
-    parseStartupFrame
+    parseStartupRange
         (String.ofList (p₁ ++ ((toString a).toList ++ sep :: (p₂ ++ (toString b).toList)))) =
-      some { startup := a, activeEnd := some b } := by
+      some (a, some b) := by
   obtain ⟨hnea, hda, -⟩ := toString_digits a
   obtain ⟨hneb, hdb, -⟩ := toString_digits b
   -- The input starts with a prefix letter or a digit, never whitespace.
@@ -806,22 +923,35 @@ theorem parseStartupFrame_range (a b : Nat) (p₁ p₂ : List Char) (sep : Char)
   rw [List.append_nil] at ha hb
   have hend : dropImpactPrefix (p₂ ++ (toString b).toList) = (toString b).toList := by
     simpa using dropImpactPrefix_append p₂ (toString b).toList [] hp₂ hneb hdb
-  simp only [parseStartupFrame, startupToken, String.toList_ofList, hdrop,
+  simp only [parseStartupRange, startupToken, String.toList_ofList, hdrop,
     dropImpactPrefix_append p₁ _ _ hp₁ hnea hda, htw, List.takeWhile_append_of_pos hns,
     List.dropWhile_append_of_pos hns, List.takeWhile_cons, List.dropWhile_cons, hsep,
     Bool.not_true, Bool.false_eq_true, if_false, List.append_nil, List.drop_succ_cons,
     List.drop_zero, hend, ha, hb]
 
 /--
+  Every spelling of an ordered startup range (start ≤ end) parses to that
+  start and end; an end before the start is dropped (`orderedEnd`).
+-/
+theorem parseStartupFrame_range (a b : Nat) (p₁ p₂ : List Char) (sep : Char)
+    (hp₁ : IsImpactPrefix p₁) (hp₂ : IsImpactPrefix p₂) (hsep : isRangeSep sep = true) :
+    parseStartupFrame
+        (String.ofList (p₁ ++ ((toString a).toList ++ sep :: (p₂ ++ (toString b).toList)))) =
+      some { startup := a, activeEnd := if a ≤ b then some b else none } := by
+  simp only [parseStartupFrame, parseStartupRange_range a b p₁ p₂ sep hp₁ hp₂ hsep,
+    Option.map_some, orderedEnd]
+
+/--
   Startup round trip for the clean CSV export, which stores `toString` of
   the start and end frames and rebuilds "i{start}~{end}" when loading.
 -/
-theorem parseStartupFrame_range_toString (a b : Nat) :
+theorem parseStartupFrame_range_toString (a b : Nat) (hab : a ≤ b) :
     parseStartupFrame ("i" ++ toString a ++ "~" ++ toString b) =
       some { startup := a, activeEnd := some b } := by
   rw [parseStartupFrame_congr (t := String.ofList
     (['i'] ++ ((toString a).toList ++ '~' :: ([] ++ (toString b).toList))))]
-  · exact parseStartupFrame_range a b ['i'] [] '~' (Or.inr (Or.inl rfl)) (Or.inl rfl) rfl
+  · rw [parseStartupFrame_range a b ['i'] [] '~' (Or.inr (Or.inl rfl)) (Or.inl rfl) rfl,
+      if_pos hab]
   · simp only [String.toList_append, String.toList_ofList, List.nil_append, List.append_assoc]
     rfl
 
@@ -849,6 +979,115 @@ theorem activeFrames_of_le (d : StartupData) (e : Nat) (he : d.activeEnd = some 
 theorem activeFrames_of_lt (d : StartupData) (e : Nat) (he : d.activeEnd = some e)
     (hlt : e < d.startup) : d.activeFrames = some 1 := by
   simp [StartupData.activeFrames, he, Nat.not_le.mpr hlt]
+
+-- ------------------------------------------------------------
+-- Abnormal source data
+-- ------------------------------------------------------------
+
+theorem orderedEnd_le {n e : Nat} {x : Option Nat} (h : orderedEnd n x = some e) : n ≤ e := by
+  cases x with
+  | none => simp [orderedEnd] at h
+  | some x =>
+    simp only [orderedEnd] at h
+    split at h
+    · injection h with h; omega
+    · contradiction
+
+/-- `parseStartupFrame` is the written range with an unexplainable end dropped. -/
+theorem parseStartupFrame_of_range {s : String} {n : Nat} {x : Option Nat}
+    (h : parseStartupRange s = some (n, x)) :
+    parseStartupFrame s = some { startup := n, activeEnd := orderedEnd n x } := by
+  simp [parseStartupFrame, h]
+
+/-- A parsed startup never ends before it starts. -/
+theorem parseStartupFrame_activeEnd_ge {s : String} {d : StartupData} {e : Nat}
+    (h : parseStartupFrame s = some d) (he : d.activeEnd = some e) : d.startup ≤ e := by
+  simp only [parseStartupFrame, Option.map_eq_some_iff] at h
+  obtain ⟨r, -, rfl⟩ := h
+  exact orderedEnd_le he
+
+/-- So the active frame count of parsed data is always end − start + 1. -/
+theorem parseStartupFrame_activeFrames {s : String} {d : StartupData} {e : Nat}
+    (h : parseStartupFrame s = some d) (he : d.activeEnd = some e) :
+    d.activeFrames = some (e - d.startup + 1) :=
+  activeFrames_of_le d e he (parseStartupFrame_activeEnd_ge h he)
+
+/-- An inverted range is flagged exactly when its written end precedes its start. -/
+theorem startupIssues_inverted_iff {s : String} {n e : Nat}
+    (h : parseStartupRange s = some (n, some e)) :
+    FrameIssue.rangeEndBeforeStart n e ∈ startupIssues s ↔ e < n := by
+  simp only [startupIssues, h]
+  by_cases hen : e < n
+  · simp [hen]
+  · simp [hen]
+
+/-- A written end is dropped from the parse exactly when it is flagged. -/
+theorem parseStartupFrame_end_dropped_iff {s : String} {n e : Nat}
+    (h : parseStartupRange s = some (n, some e)) :
+    parseStartupFrame s = some { startup := n } ↔
+      FrameIssue.rangeEndBeforeStart n e ∈ startupIssues s := by
+  rw [startupIssues_inverted_iff h, parseStartupFrame_of_range h]
+  simp only [orderedEnd, Option.some.injEq, StartupData.mk.injEq, true_and]
+  by_cases hne : n ≤ e
+  · simp [hne] <;> omega
+  · simp [hne] <;> omega
+
+/-- Two marked characters stand next to each other somewhere in the list. -/
+theorem hasAdjacent_iff (marks : Char → Bool) (cs : List Char) :
+    hasAdjacent marks cs = true ↔
+      ∃ pre a b post, cs = pre ++ a :: b :: post ∧ marks a = true ∧ marks b = true := by
+  induction cs with
+  | nil => simp [hasAdjacent]
+  | cons x rest ih =>
+    simp only [hasAdjacent, Bool.or_eq_true, Bool.and_eq_true, ih]
+    constructor
+    · rintro (⟨hx, hy⟩ | ⟨pre, a, b, post, rfl, ha, hb⟩)
+      · cases rest with
+        | nil => simp at hy
+        | cons y rest => exact ⟨[], x, y, rest, rfl, hx, by simpa using hy⟩
+      · exact ⟨x :: pre, a, b, post, rfl, ha, hb⟩
+    · rintro ⟨pre, a, b, post, hcs, ha, hb⟩
+      cases pre with
+      | nil =>
+        simp only [List.nil_append, List.cons.injEq] at hcs
+        obtain ⟨rfl, rfl⟩ := hcs
+        exact Or.inl ⟨ha, by simpa using hb⟩
+      | cons p pre =>
+        simp only [List.cons_append, List.cons.injEq] at hcs
+        obtain ⟨-, rfl⟩ := hcs
+        exact Or.inr ⟨pre, a, b, post, rfl, ha, hb⟩
+
+/--
+  A block, hit or counter-hit value is unflagged exactly when it has no
+  doubled sign and either parses or is known notation.
+-/
+theorem frameIssues_eq_nil_iff (s : String) :
+    frameIssues s = [] ↔
+      hasAdjacent isSignChar s.toList = false ∧
+        ((parseBlockFrame s).isSome = true ∨ knownFrameNotation s = true) := by
+  unfold frameIssues
+  cases hadj : hasAdjacent isSignChar s.toList <;>
+    cases hp : parseBlockFrame s <;> cases hk : knownFrameNotation s <;> simp
+
+/-- A startup value is flagged for a doubled sign iff two marks are adjacent. -/
+theorem doubledSign_mem_startupIssues_iff (s : String) :
+    FrameIssue.doubledSign ∈ startupIssues s ↔ hasAdjacent isStartupMark s.toList = true := by
+  unfold startupIssues
+  cases hadj : hasAdjacent isStartupMark s.toList <;>
+    cases hr : parseStartupRange s <;> simp_all <;> split <;> simp_all <;> split <;> simp_all
+
+/--
+  A startup value is flagged unrecognized iff it does not parse, is not
+  known notation and has no doubled sign.
+-/
+theorem unrecognized_mem_startupIssues_iff (s : String) :
+    FrameIssue.unrecognized ∈ startupIssues s ↔
+      parseStartupRange s = none ∧ knownStartupNotation s = false ∧
+        hasAdjacent isStartupMark s.toList = false := by
+  unfold startupIssues
+  cases hadj : hasAdjacent isStartupMark s.toList <;>
+    cases hk : knownStartupNotation s <;>
+    cases hr : parseStartupRange s <;> simp_all <;> split <;> simp_all <;> split <;> simp_all
 
 -- ------------------------------------------------------------
 -- Regression examples (real data values)
@@ -970,16 +1209,52 @@ theorem parseBlockFrame_guard_before_code :
   rfl
 
 /--
-  A range that ends before it starts ("i25~16" in real data) keeps both
-  numbers; `activeFrames` then falls back to 1 (`activeFrames_of_lt`).
+  A range that ends before it starts (Miary Zo uf+3+4 "i25~16", Jun IZU.3
+  "i16~15 i14~15") keeps its start; the end is unknown and flagged.
 -/
 theorem parseStartupFrame_end_before_start :
-    parseStartupFrame "i25~16" = some { startup := 25, activeEnd := some 16 } := by
+    parseStartupFrame "i25~16" = some { startup := 25 } := by
   rfl
 
-theorem activeFrames_end_before_start :
-    StartupData.activeFrames { startup := 25, activeEnd := some 16 } = some 1 := by
+theorem startupIssues_end_before_start :
+    startupIssues "i25~16" = [.rangeEndBeforeStart 25 16] := by
   rfl
+
+theorem startupIssues_end_before_start_multi_hit :
+    startupIssues "i16~15 i14~15" = [.rangeEndBeforeStart 16 15] := by
+  rfl
+
+/-- Raven H.b+2,4,2: a minus sign after the separator of a later hit. -/
+theorem startupIssues_doubled_separator :
+    startupIssues "i15~17, ,i19~20, i39~-41" = [.doubledSign] := by
+  rfl
+
+/-- Asuka db+4,1+4 on block: a doubled minus. -/
+theorem frameIssues_doubled_minus :
+    frameIssues "--3" = [.doubledSign] := by
+  rfl
+
+/-- Lee 4,u+3 counter hit "js": neither a frame value nor known notation. -/
+theorem frameIssues_unrecognized_js :
+    frameIssues "js" = [.unrecognized] := by
+  rfl
+
+/-- Known non-numeric notation is not flagged. -/
+theorem frameIssues_known_notation :
+    frameIssues "!" = [] ∧ frameIssues "N/A" = [] ∧ frameIssues "KND" = [] ∧
+    frameIssues "LNC" = [] ∧ frameIssues "th" = [] := by
+  decide
+
+theorem startupIssues_known_notation :
+    startupIssues "(depends)" = [] ∧ startupIssues "js12" = [] ∧
+    startupIssues ",i14~15" = [] ∧ startupIssues "N/A / i26~i31 Heat" = [] := by
+  decide
+
+/-- Ordinary values, including hand-typed ranges, are not flagged. -/
+theorem issues_ordinary_values :
+    frameIssues "+12 JGR" = [] ∧ frameIssues "-12~+26g" = [] ∧
+    startupIssues "i13-14" = [] ∧ startupIssues "i15-i16" = [] := by
+  decide
 
 /--
   A leading comma means the first hit has no startup listed (",i14~15").

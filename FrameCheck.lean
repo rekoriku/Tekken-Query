@@ -11,7 +11,8 @@ import Std.Data.HashSet
   `data/` is not tracked, so the snapshot stays beside the fetched data it
   describes; record it with `--update` before changing the parser.
 
-  Report (stdout): unparsed values, values whose parse changed relative to the
+  Report (stdout): unparsed values, frame issues (abnormal source data such
+  as "i25~16" or "--3"), values whose parse changed relative to the
   snapshot (guard-flag changes are counted separately), and values new to or
   missing from the data. Exits with status 1 when a snapshot value changed
   meaning; values added by a data refresh are reported but do not fail.
@@ -29,17 +30,26 @@ def showOpt {α : Type} [ToString α] : Option α → String
   | some v => toString v
   | none => "none"
 
-/-- Describe how the startup parser reads a value. -/
-def describeStartup (s : String) : String :=
-  match Frame.parseStartupFrame s with
-  | some d => s!"startup={d.startup} end={showOpt d.activeEnd} active={showOpt d.activeFrames}"
-  | none => "UNPARSED"
+/-- Suffix naming a value's frame issues, empty when it has none. -/
+def describeIssues (issues : List Frame.FrameIssue) : String :=
+  if issues.isEmpty then "" else s!" ISSUES={",".intercalate (issues.map (·.code))}"
 
-/-- Describe how the block parser (also used for hit and counter hit) reads a value. -/
+/-- Describe how the startup parser reads a value, with its frame issues. -/
+def describeStartup (s : String) : String :=
+  let parsed := match Frame.parseStartupFrame s with
+    | some d => s!"startup={d.startup} end={showOpt d.activeEnd} active={showOpt d.activeFrames}"
+    | none => "UNPARSED"
+  parsed ++ describeIssues (Frame.startupIssues s)
+
+/--
+  Describe how the block parser (also used for hit and counter hit) reads a
+  value, with its frame issues.
+-/
 def describeBlock (s : String) : String :=
-  match Frame.parseBlockFrame s with
-  | some d => s!"value={d.value} guard={d.guardable} range={showOpt d.rangeEnd}"
-  | none => "UNPARSED"
+  let parsed := match Frame.parseBlockFrame s with
+    | some d => s!"value={d.value} guard={d.guardable} range={showOpt d.rangeEnd}"
+    | none => "UNPARSED"
+  parsed ++ describeIssues (Frame.frameIssues s)
 
 /-- Escape a raw value so it fits on one tab-separated line. -/
 def escapeField (s : String) : String :=
@@ -106,7 +116,8 @@ def main (args : List String) : IO UInt32 := do
   let current ← collect rawDir
   let old ← readSnapshot snapshotPath
   let keys := sortStrings (current.toList.map (·.1))
-  let unparsed := keys.filter (fun k => current.get? k == some "UNPARSED")
+  let unparsed := keys.filter (fun k => (current.get? k).any (·.startsWith "UNPARSED"))
+  let flagged := keys.filter (fun k => (current.get? k).any (fun d => (d.splitOn " ISSUES=").length > 1))
   let changed := keys.filterMap fun k =>
     match old.get? k, current.get? k with
     | some o, some n => if o != n then some (k, o, n) else none
@@ -117,6 +128,8 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"Distinct values: {keys.length} (snapshot: {old.size})"
   IO.println s!"Unparsed: {unparsed.length}"
   for k in unparsed do IO.println s!"  {k}"
+  IO.println s!"Frame issues (abnormal source data): {flagged.length}"
+  for k in flagged do IO.println s!"  {k}\t{(current.get? k).getD ""}"
   IO.println s!"Changed meaning: {changed.length} (guard flag changed: {guardChanged.length})"
   for (k, o, n) in changed do IO.println s!"  {k}\t{o} -> {n}"
   IO.println s!"New values: {added.length}"

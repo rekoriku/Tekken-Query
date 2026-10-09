@@ -96,8 +96,35 @@ def cleanCsvHeaders : List String :=
   , "startup", "startup_end", "active_frames"
   , "block_frame", "block_guardable", "block_range_end"
   , "hit_frame", "counter_hit_frame"
-  , "tags", "notes"
+  , "tags", "notes", "frame_issues"
   ]
+
+/--
+  One-line written value for the `frame_issues` column: surrounding
+  whitespace is trimmed, other whitespace becomes a space and ';' (the entry
+  separator) becomes ','.
+-/
+def issueWrittenValue (v : String) : String :=
+  String.ofList ((Frame.trimChars v).map fun c =>
+    if c.isWhitespace then ' ' else if c == ';' then ',' else c)
+
+/--
+  Render frame issues as `column:code:written` entries joined by "; ",
+  e.g. "startup:range_end_before_start:i25~16".
+-/
+def renderFrameIssues (issues : List (String × Frame.FrameIssue × String)) : String :=
+  "; ".intercalate (issues.map fun (column, issue, v) =>
+    s!"{column}:{issue.code}:{issueWrittenValue v}")
+
+/--
+  The `frame_issues` field of a move: computed from its raw frame values, or
+  carried over unchanged when the move was loaded from a clean CSV (whose
+  rebuilt frame strings no longer hold the abnormal text).
+-/
+def TekkenMove.frameIssuesField (m : TekkenMove) : String :=
+  match m.cleanFrameIssues with
+  | some text => text
+  | none => renderFrameIssues m.frameIssueList
 
 /--
   Convert a TekkenMove to a clean CSV row.
@@ -131,6 +158,7 @@ def TekkenMove.toCleanRow (m : TekkenMove) : List String :=
   , m.counterHitFrame.getD ""
   , m.tags.getD ""
   , cleanNotesField (m.notes.getD "")
+  , m.frameIssuesField
   ]
 
 /--
@@ -150,6 +178,30 @@ def rowToCsvLine (fields : List String) : String :=
 theorem toCleanRow_length (m : TekkenMove) :
     m.toCleanRow.length = cleanCsvHeaders.length := by
   rfl
+
+/--
+  A written value in `frame_issues` is one line and never contains the entry
+  separator ';'.
+-/
+theorem issueWrittenValue_safe (v : String) :
+    ∀ c ∈ (issueWrittenValue v).toList, c ≠ ';' ∧ (c.isWhitespace = true → c = ' ') := by
+  intro c hc
+  simp only [issueWrittenValue, String.toList_ofList, List.mem_map] at hc
+  obtain ⟨x, -, rfl⟩ := hc
+  by_cases hw : x.isWhitespace = true
+  · simp [hw]
+  · by_cases hs : x = ';'
+    · subst hs; decide
+    · simp [hw, hs]
+
+/--
+  Clean CSV round trip: a move loaded from a clean record exports the same
+  `frame_issues` text it was loaded with.
+-/
+theorem frameIssuesField_fromCleanRecord (rec : List (String × Option String)) (text : String)
+    (h : lookupField rec "frame_issues" = some text) :
+    (TekkenMove.fromCleanRecord rec).frameIssuesField = text := by
+  simp [TekkenMove.frameIssuesField, TekkenMove.fromCleanRecord, h]
 
 /--
   stripHtmlTagsAux never increases the length of the input.

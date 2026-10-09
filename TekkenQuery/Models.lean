@@ -104,7 +104,24 @@ structure TekkenMove where
   stance            : Option String := none
   commandWithoutStance : Option String := none
   properties        : MoveProperties := {}
+  /-- `frame_issues` text read back from a clean CSV (see `frameIssuesField`). -/
+  cleanFrameIssues  : Option String := none
   deriving Repr, BEq, Inhabited
+
+/--
+  Abnormal frame values of a move, as (clean CSV column, issue, written
+  value). Startup values use `Frame.startupIssues`; block, hit and counter-hit
+  values use `Frame.frameIssues`.
+-/
+def TekkenMove.frameIssueList (m : TekkenMove) : List (String × Frame.FrameIssue × String) :=
+  let tag (column : String) (value : Option String) (issues : String → List Frame.FrameIssue) :=
+    match value with
+    | some v => (issues v).map fun i => (column, i, v)
+    | none => []
+  tag "startup" m.startupFrame Frame.startupIssues ++
+  tag "block_frame" m.blockFrame Frame.frameIssues ++
+  tag "hit_frame" m.hitFrame Frame.frameIssues ++
+  tag "counter_hit_frame" m.counterHitFrame Frame.frameIssues
 
 /--
   Get the parsed startup frame data (preserves active frame range).
@@ -324,6 +341,7 @@ def TekkenMove.fromCleanRecord (rec : List (String × Option String)) : TekkenMo
     stance            := stance
     commandWithoutStance := some cmdWithoutStance
     properties        := parseProperties tags notes
+    cleanFrameIssues  := lookupField rec "frame_issues"
   }
 
 /--

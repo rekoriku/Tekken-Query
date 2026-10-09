@@ -33,6 +33,10 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
 - Startup ranges written by hand as `i13-14` or `i15-i16` (instead of
   `i13~14`) now keep their end frame and active-frame count, for example
   Lee's `df+4`.
+- Frame values that cannot be explained (a startup range ending before it
+  starts, a doubled sign such as `--3`, unknown text) are flagged as
+  abnormal source data instead of being guessed; clean CSVs gain a
+  `frame_issues` column.
 - The frame parsers carry general Lean proofs (sign handling, round trips,
   the guard rule and multi-hit startups) instead of example-only theorems.
 

@@ -44,10 +44,25 @@ The frame parsers (`Frame.lean`) prove, for all inputs:
 - `parseNatFromChars_append` — a digit run parses to its decimal value and the rest is kept
 - `parseSignedValue_nonneg` / `parseSignedValue_nonpos` / `parseSignedValue_minus_eq_neg_plus` / `parseSignedValue_zero` — sign correctness, including `-0` = `+0` = 0
 - `parseSignedValue_renderSignedValue`, `parseBlockFrame_renderSignedValue`, `parseBlockFrame_range_renderSignedValue` — values rendered as `+N` / `-N` / `0` (with an optional `g`, or as an `A~B` range) parse back exactly
-- `parseStartupFrame_range` / `parseStartupFrame_range_toString` — every startup range spelling in the data (`~` or `-` between, optional `i`/`I` before either number) parses to the same start and end; the `i{start}~{end}` form rebuilt from clean CSVs parses back exactly
+- `parseStartupRange_range` / `parseStartupFrame_range` / `parseStartupFrame_range_toString` — every startup range spelling in the data (`~` or `-` between, optional `i`/`I` before either number) reads as the same start and end; an ordered `i{start}~{end}` rebuilt from clean CSVs parses back exactly
+- `parseStartupFrame_activeEnd_ge` / `parseStartupFrame_activeFrames` — a parsed startup never ends before it starts, so its active count is always end − start + 1
 - `parseBlockFrame_guardable` / `hasGuardSuffix_stop` — the guard flag is decided by the lowercase suffix attached to the leading number; nothing after a space, `(`, `/`, `~` or uppercase stance name affects it
 - `parseStartupFrame_first_hit` — text after the first comma or whitespace (later hits) never changes the startup result
 - `activeFrames_ge_one` / `activeFrames_of_le` / `activeFrames_of_lt` — active-frame counts, including the current fallback to 1 when a range ends before it starts
+
+### Abnormal source data (`FrameIssue`)
+
+Some frame values cannot be explained by the notation and are almost certainly typos in the source wiki. The parsers never guess a correction; Lean reports them as `Frame.FrameIssue` values:
+
+| Code | Rule | Example (data, 2026-10-09) |
+|------|------|----------------------------|
+| `range_end_before_start` | first-hit startup range whose written end precedes its start; the start is kept and the end is dropped as unknown | Miary Zo `uf+3+4` `i25~16` |
+| `doubled_sign` | two signs (`+`/`-`) in a row in a block, hit or counter-hit value, or two of `+`/`-`/`~` in a row anywhere in a startup value | Asuka `db+4,1+4` block `--3`; Raven `H.b+2,4,2` `… i39~-41` |
+| `unrecognized` | the value does not parse, has no doubled sign and is not known notation | Lee `4,u+3` counter hit `js` |
+
+Known non-numeric notation is listed in `Frame.lean` and is not flagged: block/hit/counter hit `!`, `N/A`, `KND`, `LNC`, `th`; startup with a leading comma, `js<digits>`, values starting `N/A`, and `(depends)`. A new unparsed spelling is flagged by default; `lake exe frame_check` lists every flagged value for review.
+
+The clean CSV carries them in the last column, `frame_issues`: `column:code:written` entries joined by `; `, where `column` is the clean column (`startup`, `block_frame`, `hit_frame`, `counter_hit_frame`) and `written` is the raw value on one line (`issueWrittenValue_safe`). A move loaded from a clean CSV exports the same text (`frameIssuesField_fromCleanRecord`). Proofs: `startupIssues_inverted_iff`, `parseStartupFrame_end_dropped_iff` (an end is dropped exactly when it is flagged), `hasAdjacent_iff`, `doubledSign_mem_startupIssues_iff`, `unrecognized_mem_startupIssues_iff`, `frameIssues_eq_nil_iff`.
 
 Lean's `toString` for negative `Int` is built on the opaque `String.Internal.append`, so the clean export's negative `block_frame` text cannot be reasoned about in the kernel; the round-trip theorems use the transparent `renderSignedValue` instead.
 
