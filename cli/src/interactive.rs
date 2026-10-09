@@ -64,10 +64,11 @@ fn similarity(a: &str, b: &str) -> f64 {
     }
 
     let lcs_len = prev[b_len];
-    // Precision loss is acceptable: character names are always short
-    #[allow(clippy::cast_precision_loss)]
-    let max_len = a_len.max(b_len) as f64;
-    f64::from(lcs_len) / max_len
+    // Inputs longer than u32::MAX characters cannot occur; treat them as dissimilar.
+    let Ok(max_len) = u32::try_from(a_len.max(b_len)) else {
+        return 0.0;
+    };
+    f64::from(lcs_len) / f64::from(max_len)
 }
 
 /// Minimum similarity threshold for fuzzy matching.

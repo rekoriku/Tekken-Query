@@ -107,6 +107,24 @@ structure ParseResult where
   deriving Repr
 
 /--
+  A record is non-blank when it has several fields or one non-empty field;
+  blank lines split into a single empty field.
+-/
+def isNonBlankRecord : List String → Bool
+  | [] => false
+  | [field] => !(strip field).isEmpty
+  | _ :: _ :: _ => true
+
+/-- A record with two or more fields is never blank. -/
+theorem isNonBlankRecord_multi (a b : String) (rest : List String) :
+    isNonBlankRecord (a :: b :: rest) = true := by
+  rfl
+
+/-- A blank line (one empty field) is blank. -/
+theorem isNonBlankRecord_blank_line : isNonBlankRecord [""] = false := by
+  decide
+
+/--
   Parse a full CSV string.
   - Detects delimiter from header row
   - Handles multiline quoted fields
@@ -125,7 +143,7 @@ def parse (input : String) : Except ParseError ParseResult :=
     -- Now parse the entire input respecting quotes across newlines
     let allRecords := splitRecords input delimChar
     -- Filter out empty records (blank lines)
-    let nonEmptyRecords := allRecords.filter (fun r => r.length > 1 || (r.length == 1 && !(strip (r.head!)).isEmpty))
+    let nonEmptyRecords := allRecords.filter isNonBlankRecord
     match nonEmptyRecords with
     | [] => .error .emptyInput
     | headerFields :: dataRecords =>

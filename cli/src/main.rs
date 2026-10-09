@@ -51,9 +51,9 @@ enum Command {
     ///
     /// Filters are space-separated and AND'd together.
     /// Examples:
-    ///   tekken query jin mid plus homing
-    ///   tekken query kazuya i<15 plus
-    ///   tekken query yoshimitsu pc mid !punish
+    ///   tekken-cli query jin mid plus homing
+    ///   tekken-cli query kazuya i<15 plus
+    ///   tekken-cli query yoshimitsu pc mid !punish
     Query {
         /// Character ID
         character: String,
@@ -177,7 +177,7 @@ fn cmd_check(data_dir: &Path) -> Result<(), CliError> {
     if is_newer {
         eprintln!("Update available: {short_remote}");
         eprintln!("  {message}");
-        eprintln!("\nRun 'tekken fetch' or 'tekken interactive' to update.");
+        eprintln!("\nRun 'tekken-cli fetch' or 'tekken-cli interactive' to update.");
     } else {
         eprintln!("Up to date: {short_remote}");
     }
