@@ -25,6 +25,7 @@ All data logic lives here: CSV parsing, frame data parsing, filtering, compariso
 | `TekkenQuery/Json.lean` | JSON serialization: Filter deserialization (from Rust), TekkenMove serialization (to Rust), response envelopes |
 | `TekkenQuery/Server.lean` | Pure query server logic: `ServerState`, request parsing, query/compare/convert processing |
 | `Main.lean` | Thin IO layer: `--server` mode, `--export` mode, stats mode |
+| `FrameCheck.lean` | `lake exe frame_check`: parses every distinct raw frame value and compares the results with a local snapshot |
 
 ### Proofs
 
@@ -110,3 +111,5 @@ Fetches may write newly downloaded raw and clean character files as they progres
 ## Verification
 
 CI builds Lean and Rust on every pull request, rejects banned Lean escape hatches, runs Clippy with warnings denied, and runs the Rust test suite. Regression tests cover invalid frame filters and malformed server response shapes; smoke testing also exercises the real Lean server against checked-in clean data.
+
+`lake exe frame_check` parses every distinct startup, block, hit and counter-hit value in the local `data/raw/` and reports unparsed values, values whose parse differs from the snapshot `data/frame_parse_snapshot.tsv` (guard-flag changes counted separately), and values new to the data. It exits with status 1 when a snapshot value changed meaning; new values from a data refresh do not fail it. `data/` is not tracked and CI has no fetched data, so this is a local check: record a snapshot with `lake exe frame_check --update` before changing a frame parser, rerun the check afterwards, review every changed value, then refresh the snapshot.

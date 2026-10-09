@@ -1,6 +1,6 @@
 name = "tekken_query"
 version = "0.1.4"
-defaultTargets = ["tekken_query"]
+defaultTargets = ["tekken_query", "frame_check"]
 
 [[lean_lib]]
 name = "TekkenQuery"
@@ -8,3 +8,7 @@ name = "TekkenQuery"
 [[lean_exe]]
 name = "tekken_query"
 root = "Main"
+
+[[lean_exe]]
+name = "frame_check"
+root = "FrameCheck"
