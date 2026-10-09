@@ -28,6 +28,8 @@ A terminal tool for looking up Tekken 8 frame data. Mainly an interactive REPL w
 
 - A `-0` frame value now parses as 0 instead of -1 (for example Lee's `b+1`
   and `b+2,4,3` on block).
+- `guardable` only reads the suffix attached to the leading block value, so
+  stance names such as `+12 JGR` and `+5 GMH` are no longer flagged.
 
 ## What's new in v0.1.4
 
@@ -224,7 +226,7 @@ tekken-cli all pc '!cmd:2+3' by:i asc
 | `plus` | Plus on block (> 0) |
 | `minus` | Negative but safe (-1 to -9) |
 | `punish` | Punishable (<= -10) |
-| `guardable` | Opponent can still guard on block |
+| `guardable` | Opponent can still guard on block: the leading block value has an attached `g` suffix (`+15g`, `+7cg`) |
 | `i15`, `i=15`, `i<15`, `i<=15`, `i>15`, `i>=15` | Startup frame comparisons |
 | `<+5`, `>-10`, `<=0`, `>=+3`, `=-10` | Block frame comparisons |
 | `block<+5`, `block=-10` | Explicit block frame comparison |

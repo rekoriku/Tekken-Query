@@ -63,6 +63,8 @@ def StartupData.activeFrames (d : StartupData) : Option Nat :=
 
 /--
   Parsed block/hit frame data. Preserves guard suffix and range.
+  The guard flag describes the leading value only (see `hasGuardSuffix`):
+  "-12~+26g" → { value := -12, guardable := false, rangeEnd := some 26 }.
   "+15"    → { value := 15, guardable := false } — opponent CANNOT block, free launch
   "+15g"   → { value := 15, guardable := true }  — opponent CAN block despite being plus
   "-9g"    → { value := -9, guardable := true }
@@ -95,10 +97,35 @@ def parseSignedValue (chars : List Char) : Option (Int × List Char) :=
     | none => none
 
 /--
-  Check if remaining characters after a number contain 'g' (guard suffix).
+  Check if a character can be part of a frame suffix code: a lowercase ASCII
+  letter. Uppercase letters start stance abbreviations ("BT", "GMH", "JGR").
+-/
+def isSuffixChar (c : Char) : Bool :=
+  c.val ≥ 97 && c.val ≤ 122
+
+/--
+  The suffix code attached to a number: the longest run of lowercase ASCII
+  letters directly after its digits. "cg rest" → "cg"; " JGR" → "".
+-/
+def attachedSuffix (remaining : List Char) : List Char :=
+  remaining.takeWhile isSuffixChar
+
+/--
+  Guard rule: a value is guardable iff the suffix attached to its leading
+  number contains 'g'. Anything after the first character that is not a
+  lowercase letter — a space, '(', '/', ',', '?', '~' or an uppercase stance
+  abbreviation — never affects the result.
+
+  Evidence (data/raw, 41 characters, 2026-10-09): the attached suffix codes
+  that occur on block, hit and counter-hit values are a, b, c, d, f, g, s and
+  the combinations cg, gc and cs. Real values the rule must reject:
+  "+12 JGR" and "+5 GMH" (stance names), "+14 (+24g)" and "+6 (+20g)" (the g
+  belongs to the parenthetical value). Ambiguous: "+13c g" (Lee df+3,2,3 hit)
+  is read conservatively as not guardable because the g is detached, while
+  "+19g c" is guardable.
 -/
 def hasGuardSuffix (remaining : List Char) : Bool :=
-  remaining.any (fun c => c == 'g' || c == 'G')
+  (attachedSuffix remaining).contains 'g'
 
 /--
   Parse a startup frame string into structured data.
@@ -164,6 +191,51 @@ theorem parseBlockFrame_neg_zero :
 -/
 theorem parseBlockFrame_neg_ten :
     parseBlockFrame "-10" = some { value := -10 } := by
+  rfl
+
+/--
+  Regression: uppercase stance abbreviations after a space ("JGR", "GMH")
+  are not guard suffixes.
+-/
+theorem parseBlockFrame_stance_jgr :
+    parseBlockFrame "+12 JGR" = some { value := 12 } := by
+  rfl
+
+theorem parseBlockFrame_stance_gmh :
+    parseBlockFrame "+5 GMH" = some { value := 5 } := by
+  rfl
+
+theorem parseBlockFrame_suffix_then_stance :
+    parseBlockFrame "+9c JGR" = some { value := 9 } := by
+  rfl
+
+/--
+  Regression: a 'g' inside a parenthetical value belongs to that value.
+-/
+theorem parseBlockFrame_parenthetical_guard :
+    parseBlockFrame "+14 (+24g)" = some { value := 14 } := by
+  rfl
+
+/--
+  Attached guard suffixes, alone or combined with other codes, still count.
+-/
+theorem parseBlockFrame_guard_suffix :
+    parseBlockFrame "+15g" = some { value := 15, guardable := true } := by
+  rfl
+
+theorem parseBlockFrame_combined_guard_suffix :
+    parseBlockFrame "+18cg" = some { value := 18, guardable := true } := by
+  rfl
+
+theorem parseBlockFrame_guard_then_detached_code :
+    parseBlockFrame "+19g c" = some { value := 19, guardable := true } := by
+  rfl
+
+/--
+  Ambiguous "+13c g": the detached g is not read as a guard suffix.
+-/
+theorem parseBlockFrame_detached_guard :
+    parseBlockFrame "+13c g" = some { value := 13 } := by
   rfl
 
 /--
